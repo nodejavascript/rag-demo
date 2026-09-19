@@ -99,7 +99,11 @@ after(async () => {
 test('the page loads, and says whether the model is up', async (t) => {
   if (!page) return t.skip('no browser');
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  assert.match(await page.title(), /Ask any document/);
+  // 🔴 The title IS the hostname, so this asserts the name the app goes by. It read
+  // "Ask any document — rag" until the app was renamed, and this line went on passing
+  // against nothing — a reminder that a test naming a string is a test that has to be
+  // changed when the string is.
+  assert.match(await page.title(), /^rag-demo\.nodejavascript\.com$/);
   await page.waitForFunction(() => document.getElementById('health').innerHTML.length > 0);
   const health = await page.locator('#health').innerText();
   assert.ok(health.length > 0, 'the model status must be reported on arrival');
@@ -225,6 +229,51 @@ test('deleting a document puts the page back to its home state', async (t) => {
   assert.equal(after.scrollY, 0, 'the page must look at the top again, which is what "looks like the home page" means');
   assert.equal(after.toastOn, true, 'the panel that used to carry the news is gone, so the news must float');
   assert.match(after.toast, /deleted/i);
+});
+
+/**
+ * What the document does not say — on the page, after a refusal.
+ *
+ * A refusal used to be a dead end: the reader was told the document does not say, and left
+ * to work out which part of the question it did not say it about. This panel answers that
+ * with a count rather than an opinion, which is why it is asserted on the PAGE — the unit
+ * tests prove the counting, and only this can prove the reader ever sees it.
+ */
+test('a refusal says which words the document does not have', async (t) => {
+  if (!page) return t.skip('no browser');
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  await page.fill('#question', 'What colour was the front door?');
+  await page.evaluate(() => document.getElementById('ask').click());
+  await page.waitForFunction(
+    () => !document.getElementById('answer-wrap').hidden && document.getElementById('gaps').innerText.includes('door'),
+    null,
+    { timeout: 180000 }
+  );
+
+  const panel = await page.evaluate(() => ({
+    visible: !document.getElementById('gaps').hidden,
+    heading: document.getElementById('gaps').querySelector('h3').textContent,
+    body: document.getElementById('gaps').innerText,
+  }));
+
+  assert.equal(panel.visible, true);
+  assert.match(panel.heading, /does not say/i);
+  assert.match(panel.body, /door/, 'the words the document lacks must be named');
+  assert.match(panel.body, /colour/, 'and all of them, not just one');
+  assert.match(
+    panel.body,
+    /not written by the model/i,
+    'the reader must be told this part is counted rather than generated — it is the whole reason it can be trusted'
+  );
+  assert.match(
+    panel.body,
+    /not a missing answer/i,
+    'and warned that a missing word does not mean the document cannot answer'
+  );
 });
 
 /**

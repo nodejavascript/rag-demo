@@ -12,10 +12,10 @@
     "start": "npm run build && node --experimental-sqlite dist/server.js",
     "serve": "node --experimental-sqlite dist/server.js",
     "ask": "node --experimental-sqlite dist/cli.js",
-    "test": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js test/resume.test.js test/intent.test.js",
+    "test": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js test/resume.test.js test/intent.test.js test/gaps.test.js",
     "test:live": "npm run build && node --experimental-sqlite --test test/live.test.js",
     "test:e2e": "npm run build && node --experimental-sqlite --test test/e2e.test.js",
-    "test:all": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js test/resume.test.js test/intent.test.js test/e2e.test.js",
+    "test:all": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js test/resume.test.js test/intent.test.js test/gaps.test.js test/e2e.test.js",
     "fixture": "node tools/make-fixture.mjs",
     "eval": "npm run build && node --experimental-sqlite tools/eval.mjs",
     "calibrate": "npm run build && node --experimental-sqlite tools/calibrate.mjs"

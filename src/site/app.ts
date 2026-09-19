@@ -85,6 +85,13 @@ interface Answer {
   prose: string;
   mode: 'grounded' | 'refused';
   sources: Source[];
+  /** What the document does NOT say — counted in code, never generated. See `gaps.ts`. */
+  gaps: {
+    absent: string[];
+    absentTotal: number;
+    presentCount: number;
+    once: { value: string; kind: string }[];
+  };
   details: AnswerDetails;
   computed: { kind: string; term?: string; value: number | string; first?: string | null; last?: string | null; entries?: number }[];
   timings: { retrieveMs: number; rerankMs: number; modelMs: number; totalMs: number };
@@ -333,6 +340,8 @@ const el = {
   deleteButton: $<HTMLButtonElement>('delete'),
   deleteStat: $('delete-stat'),
   ttlLine: $('ttl-line'),
+  gaps: $('gaps'),
+  gapsBody: $('gaps-body'),
 };
 
 /* ------------------------------------------------------------------ step 1 */
@@ -429,6 +438,7 @@ function resetToHome(): void {
   el.shape.hidden = true;
   el.answerWrap.hidden = true;
   el.sourcesWrap.hidden = true;
+  el.gaps.hidden = true;
 
   // The input side.
   el.paste.value = '';
@@ -457,6 +467,7 @@ function resetToHome(): void {
     el.sourcesSummary,
     el.sources,
     el.suggestions,
+    el.gapsBody,
     el.ttlLine,
     el.deleteStat,
   ]) {
@@ -632,7 +643,6 @@ async function deleteNow(): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ step 3 */
-
 const SUGGESTIONS = [
   'What is this document about?',
   'What happened first, and what happened last?',
@@ -696,9 +706,57 @@ function detailBox(title: string, inner: string): string {
   return `<div class="detail"><h4>${esc(title)}</h4>${inner}</div>`;
 }
 
+/**
+ * What the document does not say.
+ *
+ * 🔴 **EVERY WORD OF THIS IS COUNTED IN CODE, AND THE PANEL SAYS SO.** It is the one part
+ * of the answer block that is not the model's, which is exactly why it can be trusted — and
+ * exactly why it must be visibly distinct from the answer above it. It is also why the
+ * wording is careful: a missing word is **not** a missing answer. A resume answers "where
+ * did he go to school?" without ever containing the word *school*, because it heads that
+ * section EDUCATION. So the claim made here is only ever about vocabulary, said in those
+ * terms, with the absences named.
+ *
+ * Nothing to report hides the panel rather than showing an empty one: a section that says
+ * "nothing" under every answer is noise, and noise is what a reader learns to skip.
+ */
+function renderGaps(gaps: Answer['gaps']): void {
+  const parts: string[] = [];
+
+  if (gaps.absentTotal > 0) {
+    const shown = gaps.absent.map((word) => `<span class="term">${esc(word)}</span>`).join(' ');
+    const more = gaps.absentTotal > gaps.absent.length ? ` and <b>${gaps.absentTotal - gaps.absent.length}</b> more` : '';
+    const sentence =
+      gaps.absentTotal === 1
+        ? `That word does not appear anywhere in the document.`
+        : `None of those words appears anywhere in the document.`;
+    parts.push(`<p>Your question uses ${shown}${more}. ${sentence}</p>`);
+    parts.push(
+      `<p>A missing word is not a missing answer — the document may simply use a different ` +
+        `one. The answer above is what it actually says.</p>`
+    );
+  } else if (gaps.presentCount > 0) {
+    parts.push('<p>Every word your question uses appears somewhere in the document.</p>');
+  }
+
+  if (gaps.once.length > 0) {
+    const chips = gaps.once
+      .map((item) => `<span class="once"><b>${esc(item.value)}</b> · said once, as a ${esc(item.kind)}</span>`)
+      .join('');
+    parts.push(
+      `<p>Mentioned exactly once in the whole document, so the easiest things to miss:</p>` +
+        `<div class="once-list">${chips}</div>`
+    );
+  }
+
+  el.gapsBody.innerHTML = parts.join('');
+  el.gaps.hidden = parts.length === 0;
+}
+
 function renderAnswer(answer: Answer): void {
   el.answerWrap.hidden = false;
   el.answerQ.innerHTML = `<b>You asked:</b> ${esc(answer.question)}`;
+  renderGaps(answer.gaps);
 
   if (answer.mode === 'refused') {
     el.answer.classList.add('refused');

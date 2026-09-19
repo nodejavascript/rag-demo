@@ -235,6 +235,19 @@ It works best when the document has its own structure: dates on their own line, 
               <summary id="sources-summary">The notes this came from</summary>
               <ol id="sources"></ol>
             </details>
+
+            <!--
+              🔴 WHAT THE DOCUMENT DOES NOT SAY — deliberately the last thing on the panel,
+              and deliberately styled unlike the answer above it. Every claim in here is
+              counted in code over the document's whole text, so it is the one part of this
+              page that is not the model's word — and a reader must never have to work out
+              which half they are looking at.
+            -->
+            <aside class="gaps" id="gaps" hidden>
+              <h3>What the document does not say</h3>
+              <p class="gaps-tag">Counted in code over the whole document — not written by the model.</p>
+              <div id="gaps-body"></div>
+            </aside>
           </div>
         </section>
 
@@ -350,6 +363,6 @@ It works best when the document has its own structure: dates on their own line, 
          report cannot live in the panel that was just removed. -->
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script type="module" src="./app.js?v=2"></script>
+    <script type="module" src="./app.js?v=3"></script>
   </body>
 </html>

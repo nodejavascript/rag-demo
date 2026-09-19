@@ -171,6 +171,41 @@ counts and timings. A privacy promise the log contradicts is not a promise.
 
 ---
 
+## What the document does not say
+
+Beside every answer is a panel that is **counted in code, not written by the model**, and
+it says so on the page. Two things it reports:
+
+- **Words in your question that appear nowhere in the document.** On a refusal this is the
+  reason — *"your question uses colour, front, door; none of those words appears anywhere
+  in the document"* — instead of the reader being left to work out which part of their
+  question went unanswered.
+- **Things the document says exactly once**, which are the easiest things in it to miss.
+
+It is the honest half of "tell me more". The tempting version of that request — let the
+model add what it knows from outside the document — is the one that produced this app's
+worst answer, *University of Windsor*, which is not in the resume. The model already had an
+instruction not to do that. What helps instead is telling the reader something no model is
+needed for.
+
+**The critical property is that it never claims an absence it has not proved.** "The
+document does not contain *door*" is a strong claim and a wrong one is worse than no panel.
+So word matching (`src/gaps.ts`) is deliberately **over-generous**: it credits the document
+with a word if it holds anything close — a plural, the same four letters with a different
+ending, `colour` against `color`. That can only lose a true absence; being strict would
+invent a false one, and a false absence is the one failure this module must not have.
+
+⚠️ **The honest limit.** The matcher sees shared letter-openings, so it cannot catch an
+**irregular** form: ask *"what did Andrea bring?"* and it will report `bring` as absent from
+a document reading *"Andrea brought paperwork"*. That claim is literally true — the document
+does not use the word `bring` — and it is why the panel carries the sentence *"a missing
+word is not a missing answer"*. A first version of the matcher reported `study` as absent
+from *"He studied engineering and his studies ended in 1993"*; `test/gaps.test.js` is mostly
+negative assertions for that reason, and most of it is testing that absences are **refused**,
+not that they are found.
+
+---
+
 ## Two answers that were wrong, and the mechanisms that stop them
 
 Both failures were found by pasting a real resume, and both are held down by tests that

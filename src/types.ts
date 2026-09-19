@@ -137,8 +137,7 @@ export interface IndexStats {
 }
 
 /** The details a note carries, gathered for the whole answer. */
-export interface AnswerDetails {
-  dates: { date: string | null; dateRaw: string | null; label: string; inferred: boolean }[];
+export interface AnswerDetails {  dates: { date: string | null; dateRaw: string | null; label: string; inferred: boolean }[];
   places: Mention[];
   people: Mention[];
   amounts: Mention[];
@@ -160,6 +159,23 @@ export interface Source {
   both: boolean;
 }
 
+/**
+ * What the document does NOT say, counted in code over its whole text. See `gaps.ts`.
+ *
+ * It lives here with the other shared shapes rather than in `gaps.ts` so that `types.ts`
+ * does not have to import from a module that imports from it.
+ */
+export interface GapReport {
+  /** Words the question used that appear nowhere in the document, capped for the page. */
+  absent: string[];
+  /** How many there were before that cut, so the page can say "and N more". */
+  absentTotal: number;
+  /** How many of the question's content words the document does hold. */
+  presentCount: number;
+  /** Things the answer rests on that the whole document says exactly once. */
+  once: { value: string; kind: string }[];
+}
+
 export interface Answer {
   question: string;
   /** The model's reply as it came back, before it was read into shape. */
@@ -169,6 +185,11 @@ export interface Answer {
   /** `grounded` when the model wrote it, `refused` when nothing matched. */
   mode: 'grounded' | 'refused';
   sources: Source[];
+  /**
+   * What the document does NOT say — counted in code over its whole text, never generated.
+   * See `gaps.ts`. Shown beside the answer precisely because it is not the model's word.
+   */
+  gaps: GapReport;
   details: AnswerDetails;
   /** Facts counted in code over the whole document. */
   computed: ComputedFact[];

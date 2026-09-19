@@ -17,6 +17,7 @@ import { tally } from './enrich.js';
 import { buildMessages, isRefusal, readShape } from './prompt.js';
 import { retrieve, type RetrieveOptions } from './retrieve.js';
 import { factsFor } from './stats.js';
+import { analyseGaps } from './gaps.js';
 import { AppError, type Answer, type AnswerDetails, type ComputedFact, type Mention, type Scored, type Source } from './types.js';
 import type { Store } from './store.js';
 import type { Model } from './model.js';
@@ -100,6 +101,15 @@ export async function answer(
   const retrieval = await retrieve(store, model, docId, question, options.retrieve);
   const warnings = [...retrieval.warnings];
 
+  // Computed once, over the document's whole text, and attached to BOTH a refusal and a
+  // grounded answer — a refusal is where it is worth the most, because it turns "the
+  // document does not say" into the reason why.
+  const gaps = analyseGaps({
+    question,
+    documentText: store.documentText(docId),
+    mentions: document.mentions,
+  });
+
   if (retrieval.silent) {
     return {
       question,
@@ -107,6 +117,7 @@ export async function answer(
       prose: '',
       mode: 'refused',
       sources: [],
+      gaps,
       details: {
         dates: [],
         places: [],
@@ -171,6 +182,7 @@ export async function answer(
     prose: refused ? '' : prose || reply,
     mode: refused ? 'refused' : 'grounded',
     sources,
+    gaps,
     details: detailsFrom(retrieval.scored),
     computed: refused ? [] : computed,
     timings: {
