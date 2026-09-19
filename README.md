@@ -5,7 +5,15 @@ The answer quotes the document, and beside it you get the **dates**, **places**,
 **people** and **images** it rests on — so you can check the answer instead of trusting
 it.
 
-Live at **https://rag-demo.nodejavascript.com** · **private repo** `git@gitlab.com:dvsmcp/rag.git`
+Live at **https://rag-demo.nodejavascript.com**
+
+- **Source, public:** https://github.com/nodejavascript/rag-demo — the same project as its
+  siblings `llm-demo` and `vision-demo`.
+- **Private mirror:** `git@gitlab.com:dvsmcp/rag.git` — the deploy remote. Both are pushed
+  in step; the public one is the readable copy, not a second codebase.
+
+**No licence is granted.** A public repository without one is all rights reserved, which is
+the intended position until that is decided otherwise.
 
 The name matches its two siblings — `llm-demo` and `vision-demo` — and the **document title
 is the sub-domain and the domain**, because the page should be called the same thing the
