@@ -122,6 +122,38 @@ function showError(where: HTMLElement, message: string): void {
   where.innerHTML = `<div class="err-box">${esc(message)}</div>`;
 }
 
+/**
+ * Read a response as JSON — and say something useful when it is not JSON.
+ *
+ * 🔴 THIS EXISTS BECAUSE GEORGE SAW `Unexpected token '<', "<!DOCTYPE "... is not valid
+ * JSON` AND NOTHING ELSE. He had pasted his resume and pressed Index; the server had a
+ * clear, specific sentence ready about the credential being refused, and none of it
+ * reached him. **A bare `response.json()` trusts the other end to be the API**, and the
+ * moment anything in front of it answers instead — a proxy, an edge error page, a
+ * maintenance notice — the reader gets a JavaScript parser complaint in place of the
+ * explanation that was written for them.
+ *
+ * So the body is read as TEXT first and parsed deliberately. Anything that is not JSON is
+ * reported as what it is: an answer from something that is not the API, named by its
+ * status and its content type, with a plain sentence about what to do. The reader is never
+ * shown a parse error again, and the front of the body is included because seeing
+ * `<!DOCTYPE html>` in the message is what makes the cause obvious in a screenshot.
+ */
+async function readJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const kind = (response.headers.get('content-type') ?? 'no content type').split(';')[0];
+    const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
+    throw new Error(
+      `The server answered ${response.status} with ${kind} instead of the API's JSON` +
+        (looksLikeHtml ? ' — that is a web page, so something in front of the app answered instead of the app' : '') +
+        `. ${text.slice(0, 120).replace(/\s+/g, ' ').trim()}`
+    );
+  }
+}
+
 function clear(where: HTMLElement): void {
   where.innerHTML = '';
 }
@@ -406,7 +438,7 @@ async function loadFile(file: File): Promise<void> {
         headers: { 'content-type': 'application/pdf' },
         body: file,
       });
-      const body = (await response.json()) as { text?: string; error?: string };
+      const body = await readJson<{ text?: string; error?: string }>(response);
       if (!response.ok || !body.text) throw new Error(body.error ?? `The server answered ${response.status}.`);
       el.paste.value = body.text;
     } else {
@@ -576,12 +608,12 @@ async function indexNow(): Promise<void> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: el.paste.value, year: year ? Number(year) : null }),
     });
-    const body = (await response.json()) as {
+    const body = await readJson<{
       document?: DocumentView;
       reused?: boolean;
       warnings?: string[];
       error?: string;
-    };
+    }>(response);
     if (!response.ok || !body.document) throw new Error(body.error ?? `The server answered ${response.status}.`);
 
     current = body.document;
@@ -630,7 +662,7 @@ async function deleteNow(): Promise<void> {
   el.deleteButton.disabled = true;
   try {
     const response = await fetch(`./api/document/${current.id}`, { method: 'DELETE' });
-    const body = (await response.json()) as { deleted?: boolean };
+    const body = await readJson<{ deleted?: boolean }>(response);
     // 🔴 THE REPORT IS TAKEN OFF THE PANEL BEFORE THE PANEL IS PUT AWAY.
     //
     // The reset hides step 4, which is the panel the reader is standing in and the panel
@@ -723,7 +755,7 @@ async function askNow(): Promise<void> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ docId: current.id, question: el.question.value.trim() }),
     });
-    const body = (await response.json()) as Answer & { error?: string };
+    const body = await readJson<Answer & { error?: string }>(response);
     if (!response.ok) throw new Error(body.error ?? `The server answered ${response.status}.`);
     renderAnswer(body);
     markAnswered(performance.now() - startedAt);
@@ -989,13 +1021,13 @@ async function reportHealth(): Promise<void> {
   if (!where) return;
   try {
     const response = await fetch('./healthz');
-    const body = (await response.json()) as {
+    const body = await readJson<{
       ok?: boolean;
       model?: string;
       provider?: string;
       chatModel?: string;
       embedModel?: string;
-    };
+    }>(response);
     if (response.ok && body.ok) {
       where.innerHTML =
         `<div class="statline">model: <b>${esc(body.chatModel ?? '?')}</b> for answers, ` +

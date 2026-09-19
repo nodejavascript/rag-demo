@@ -109,7 +109,7 @@ export async function retrieve(
   if (!question.trim()) throw new AppError('Ask a question first.', 400);
 
   const [queryVector] = await model.embed([question]);
-  if (!queryVector) throw new AppError('The embedding model returned nothing for the question.', 502);
+  if (!queryVector) throw new AppError('The embedding model returned nothing for the question.', 503);
 
   // The question's own words, plus the words a document is likely to have used instead —
   // "school" for EDUCATION, "now" for Present. Only the word search is widened: the

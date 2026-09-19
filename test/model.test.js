@@ -20,7 +20,7 @@
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -174,6 +174,93 @@ test('a missing key file produces no key rather than a crash', () => {
     MODEL_API_KEY_FILE: '/nonexistent/key',
   });
   assert.equal(config.apiKey, null, 'an absent key is null, and the 401 then says so plainly');
+});
+
+/* ------------------------------------------------------------------ *
+ * Errors the reader can actually see
+ * ------------------------------------------------------------------ */
+
+/**
+ * Remove comments before scanning source for a pattern.
+ *
+ * 🔴 **THIS EXISTS BECAUSE THE FIRST VERSION OF THESE TWO CHECKS FAILED ON ITS OWN
+ * EXPLANATION.** The guard against `response.json()` matched the sentence in `readJson`'s
+ * doc comment — *"A bare `response.json()` trusts the other end to be the API"* — and
+ * reported a defect that was not there. That is a false failure, and the rule is that a
+ * false failure is worse than no check, because it teaches the reader to ignore the gate.
+ *
+ * A check reads CODE. Prose about the code is not code.
+ */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+test('a refused credential comes back as a status the edge will not replace', async () => {
+  // 🔴 THE INCIDENT, 19 Sep 2026. George pasted his resume and pressed Index. The server
+  // had a clear sentence ready — "The model provider refused the request (401). The API
+  // key was refused. Check MODEL_API_KEY_FILE." — and sent it with a **502**.
+  //
+  // **Cloudflare replaces an origin 502 with its own HTML error page.** Measured
+  // directly: the origin answers 502 carrying that JSON, and the same request through the
+  // edge answers `<!DOCTYPE html>`. The page then called `response.json()` on HTML and
+  // threw `Unexpected token '<'`, so the reader got a JavaScript parser complaint in
+  // place of the explanation written for them.
+  //
+  // 503 means "I cannot serve this right now", which is exactly true when the credential
+  // is wrong — and Cloudflare passes 503 through, which `/healthz` has always proved.
+  stubFetch(401, { id: 'Unauthorized', message: 'Unable to authenticate you' });
+  await assert.rejects(
+    () => new Model(openaiish).embed(['anything at all']),
+    (error) => {
+      assert.equal(
+        error.status,
+        503,
+        'a status the edge replaces would hide this message completely, however good it is'
+      );
+      assert.match(error.message, /API key was refused/, 'and the message is the helpful one');
+      return true;
+    }
+  );
+});
+
+test('no 502 is produced anywhere in the server', () => {
+  // Belt and braces: 502 must not come back in a later edit either. It is the one status
+  // that is silently swallowed by the edge in front of every one of these sites.
+  //
+  // ⚠ AND THIS CHECK PROVES IT SCANNED SOMETHING. A scan whose pattern matches nothing
+  // passes while checking nothing at all, which is worse than having no check — the
+  // reader trusts a green tick that was never earned. So the codes it found are asserted
+  // to be non-empty, and printed in the failure so a broken pattern is obvious.
+  const found = [];
+  for (const file of ['model.ts', 'retrieve.ts', 'types.ts', 'server.ts', 'answer.ts', 'store.ts']) {
+    const source = stripComments(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'));
+    for (const m of source.matchAll(/\b(\d{3})\s*\)/g)) found.push(`${file}:${m[1]}`);
+  }
+  const statuses = new Set(found.map((f) => f.split(':')[1]));
+  assert.ok(
+    found.length > 5,
+    `the scan found too few status codes to mean anything (${found.join(', ')}) — the pattern is wrong`
+  );
+  assert.ok(
+    !statuses.has('502'),
+    `502 is produced, and Cloudflare replaces it with its own page: ${found.filter((f) => f.endsWith('502')).join(', ')}`
+  );
+});
+
+test('the page never parses a response unguarded', () => {
+  // The other half. `readJson` reads the body as TEXT and parses deliberately, so anything
+  // that is not the API is reported as what it is rather than as a parse error.
+  const app = stripComments(readFileSync(new URL('../site/app.js', import.meta.url), 'utf8'));
+  assert.match(app, /async function readJson/, 'readJson must exist');
+  assert.ok(
+    !/response\.json\(\)/.test(app),
+    'every response must go through readJson — a bare response.json() shows the reader a parser error'
+  );
+  assert.match(
+    app,
+    /something in front of the app answered instead of the app/,
+    'and a non-JSON answer is named as exactly that'
+  );
 });
 
 test('an ollama base URL is recognised without being told the provider', () => {

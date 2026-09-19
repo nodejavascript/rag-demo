@@ -166,19 +166,33 @@ export class Model {
       );
     }
 
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      const hint =
-        response.status === 402
-          ? ' On DigitalOcean this means serverless inference is not enabled on the account yet.'
-          : response.status === 401 || response.status === 403
-            ? ' The API key was refused. Check MODEL_API_KEY_FILE.'
-            : '';
-      throw new AppError(
-        `The model provider refused the request (${response.status}).${hint} ${detail.slice(0, 200)}`,
-        response.status === 402 ? 402 : 502
-      );
-    }
+      // 🔴 503, NOT 502, AND THIS IS NOT A STYLE CHOICE.
+      //
+      // 502 is the honest REST answer for "the thing upstream of me failed" — and it was
+      // what this returned until George pasted a resume and got a raw JavaScript parse
+      // error instead of the sentence below. **Cloudflare REPLACES an origin 502 with its
+      // own HTML error page**, so the message this line carefully builds never reached the
+      // browser: the page called `response.json()` on `<!DOCTYPE html>` and threw
+      // `Unexpected token '<'`. Measured directly — the origin answers 502 with this JSON
+      // body, and the same request through the edge answers Cloudflare's HTML.
+      //
+      // 503 means "I am not able to serve this right now", which is exactly true when the
+      // credential is wrong, and **Cloudflare passes 503 through** — `/healthz` has always
+      // returned 503 and its body has always been visible. An error nobody can read is not
+      // an error report.
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        const hint =
+          response.status === 402
+            ? ' On DigitalOcean this means serverless inference is not enabled on the account yet.'
+            : response.status === 401 || response.status === 403
+              ? ' The API key was refused. Check MODEL_API_KEY_FILE.'
+              : '';
+        throw new AppError(
+          `The model provider refused the request (${response.status}).${hint} ${detail.slice(0, 200)}`,
+          response.status === 402 ? 402 : 503
+        );
+      }
 
     return (await response.json()) as T;
   }
@@ -206,7 +220,7 @@ export class Model {
         throw new AppError(
           `The model server returned ${vectors.length} vectors for ${inputs.length} passages. ` +
             `Is "${this.config.embedModel}" installed? Run: ollama pull ${this.config.embedModel}`,
-          502
+          503
         );
       }
       return vectors.map((vector) => normalise(Float64Array.from(vector)));
@@ -222,7 +236,7 @@ export class Model {
       throw new AppError(
         `The model provider returned ${rows.length} vectors for ${inputs.length} passages ` +
           `from "${this.config.embedModel}".`,
-        502
+        503
       );
     }
     const ordered = [...rows].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
@@ -247,7 +261,7 @@ export class Model {
         180_000
       );
       const content = body.message?.content?.trim();
-      if (!content) throw new AppError('The model server returned an empty reply.', 502);
+      if (!content) throw new AppError('The model server returned an empty reply.', 503);
       return content;
     }
 
@@ -262,7 +276,7 @@ export class Model {
       180_000
     );
     const content = body.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new AppError('The model provider returned an empty reply.', 502);
+    if (!content) throw new AppError('The model provider returned an empty reply.', 503);
     return content;
   }
 
