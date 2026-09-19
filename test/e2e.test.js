@@ -176,7 +176,59 @@ test('a question the document does not answer is refused on the page', async (t)
 });
 
 /**
- * 🔴 THE REGRESSION THIS FILE EXISTS FOR.
+ * 🔴 DELETING A DOCUMENT MUST PUT THE PAGE BACK AS IT WAS.
+ *
+ * George found this by using it: after a delete, **step 4 — the panel carrying the delete
+ * button — was still on the screen**, so the page went on offering to delete a document
+ * that no longer existed, with an empty paste box above it. `delete` and `clear` each had
+ * their own list of what to hide, and the lists had drifted.
+ *
+ * So this asserts the whole state, not just that the data went: every step that only
+ * exists while a document does is hidden, the boxes are empty, the page is looking at the
+ * top again, and the reader is told what happened.
+ */
+test('deleting a document puts the page back to its home state', async (t) => {
+  if (!page) return t.skip('no browser');
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  const shown = () =>
+    page.evaluate(() => {
+      const id = (name) => !document.getElementById(name).hidden;
+      return { step2: id('step-2'), step3: id('step-3'), step4: id('step-4') };
+    });
+
+  assert.deepEqual(await shown(), { step2: true, step3: true, step4: true }, 'all three steps appear once a document exists');
+
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await page.evaluate(() => document.getElementById('delete').click());
+  await page.waitForFunction(() => document.getElementById('step-4').hidden, null, { timeout: 15000 });
+
+  assert.deepEqual(
+    await shown(),
+    { step2: false, step3: false, step4: false },
+    'step 4 carries the delete button, so leaving it up offers to delete what is already gone'
+  );
+
+  const after = await page.evaluate(() => ({
+    paste: document.getElementById('paste').value.length,
+    question: document.getElementById('question').value.length,
+    scrollY: Math.round(window.scrollY),
+    toast: document.getElementById('toast').textContent,
+    toastOn: document.getElementById('toast').classList.contains('on'),
+  }));
+
+  assert.equal(after.paste, 0, 'the pasted text must go, or the next question would be asked of a deleted document');
+  assert.equal(after.question, 0);
+  assert.equal(after.scrollY, 0, 'the page must look at the top again, which is what "looks like the home page" means');
+  assert.equal(after.toastOn, true, 'the panel that used to carry the news is gone, so the news must float');
+  assert.match(after.toast, /deleted/i);
+});
+
+/**
+ * 🔴 THE REGRESSION THAT STARTED THIS FILE.
  *
  * George pasted his own resume and asked where he went to school. The page answered
  * **"University of Windsor"**. The word *University* does not occur anywhere in the

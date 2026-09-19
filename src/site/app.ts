@@ -113,6 +113,22 @@ function clear(where: HTMLElement): void {
   where.innerHTML = '';
 }
 
+/**
+ * A short notice that fades, for news that arrives as the thing it describes goes away.
+ *
+ * Deleting a document puts the page back to its home state, which removes the panel that
+ * would otherwise report the delete — so the report has to float free of the layout. It is
+ * announced as well as shown, because a fade is not a notification.
+ */
+let toastTimer: number | undefined;
+function showToast(message: string): void {
+  const toast = $('toast');
+  toast.textContent = message;
+  toast.classList.add('on');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove('on'), 6000);
+}
+
 /** The chapter-and-verse references the model wrote, picked out of the prose. */
 function markCitations(prose: string): string {
   return esc(prose).replace(/\[([^\]\n]{1,60})\]/g, '<span class="cite">$1</span>');
@@ -141,7 +157,16 @@ function fit(canvas: HTMLCanvasElement): Canvas | null {
   return { ctx, w, h };
 }
 
-const COLOURS = ['#a78bfa', '#7c5cff', '#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#f472b6', '#38bdf8'];
+/*
+ * Chart colours.
+ *
+ * These are written out rather than read from the stylesheet because a canvas cannot use
+ * a CSS variable — so they are the one place the palette is duplicated, and the one place
+ * a theme change can be left half-done. Kept in the teal family as of the teal theme:
+ * the first two are the accent and the strong accent, and the rest are the supporting
+ * hues that have to stay distinguishable from them.
+ */
+const COLOURS = ['#5eead4', '#14b8a6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#f472b6', '#22d3ee'];
 
 /**
  * Bars standing up: one column per month, the tallest scaled to the box.
@@ -158,7 +183,7 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
   const plotH = h - pad.top - pad.bottom;
 
   if (data.length === 0) {
-    ctx.fillStyle = '#6c6489';
+    ctx.fillStyle = '#6f9aa1';
     ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
     ctx.fillText('No dates were found, so there is nothing to plot.', pad.left, h / 2);
     return;
@@ -183,7 +208,7 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
     ctx.fill();
 
     if (point.value === max && barW > 12) {
-      ctx.fillStyle = '#edeaf8';
+      ctx.fillStyle = '#e6f6f8';
       ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(point.value), x + barW / 2, y - 5);
@@ -193,7 +218,7 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
 
   // Axis labels, at most one in every 34 pixels of width.
   const every = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor(plotW / 34))));
-  ctx.fillStyle = '#8f87ad';
+  ctx.fillStyle = '#7ba1a8';
   ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
   data.forEach((point, at) => {
     if (at % every !== 0 && at !== data.length - 1) return;
@@ -216,7 +241,7 @@ function drawRows(
   const { ctx, w, h } = surface;
 
   if (data.length === 0) {
-    ctx.fillStyle = '#6c6489';
+    ctx.fillStyle = '#6f9aa1';
     ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
     ctx.fillText('Nothing found to show here.', 4, h / 2);
     return;
@@ -234,13 +259,13 @@ function drawRows(
     const barW = Math.max(2, (row.value / max) * plotW);
     const colour = options.colour ?? (COLOURS[at % COLOURS.length] as string);
 
-    ctx.fillStyle = '#c3bcdd';
+    ctx.fillStyle = '#b2d3d8';
     ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
     ctx.textBaseline = 'middle';
     const label = row.label.length > 17 ? `${row.label.slice(0, 16)}\u2026` : row.label;
     ctx.fillText(label, 0, y + rowH / 2);
 
-    ctx.fillStyle = '#221939';
+    ctx.fillStyle = '#112d33';
     ctx.beginPath();
     ctx.roundRect(labelW, y + 3, plotW, barH, barH / 2);
     ctx.fill();
@@ -250,7 +275,7 @@ function drawRows(
     ctx.roundRect(labelW, y + 3, barW, barH, barH / 2);
     ctx.fill();
 
-    ctx.fillStyle = '#edeaf8';
+    ctx.fillStyle = '#e6f6f8';
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.fillText(options.decimals ? options.decimals(row.value) : String(row.value), labelW + plotW + 6, y + rowH / 2);
   });
@@ -377,15 +402,84 @@ async function loadFile(file: File): Promise<void> {
   }
 }
 
-$('clear').addEventListener('click', () => {
-  el.paste.value = '';
-  updatePasteStat();
+$('clear').addEventListener('click', () => resetToHome());
+
+/**
+ * Put the page back exactly as it arrived.
+ *
+ * 🔴 `delete` used to hide step 3, hide the shape panel, empty the paste box and stop
+ * there — which left **step 4, the panel that carries the delete button, still on the
+ * screen**, under an otherwise empty page. So the reader deleted their document and the
+ * page kept offering to delete it. `clear` had its own, slightly different list, and the
+ * two had already drifted apart.
+ *
+ * One function, called by both, is the fix: there is no second list to forget to update.
+ * It hides every step that only exists once a document exists, empties every string a
+ * later paste could resurrect, re-enables every button a request may have disabled, and
+ * returns the scroll position to the top — because "look like the home page again"
+ * includes where the page is looking.
+ */
+function resetToHome(): void {
   current = null;
+
+  // The steps that only exist while a document does.
   el.step2.hidden = true;
   el.step3.hidden = true;
   el.step4.hidden = true;
   el.shape.hidden = true;
-});
+  el.answerWrap.hidden = true;
+  el.sourcesWrap.hidden = true;
+
+  // The input side.
+  el.paste.value = '';
+  el.question.value = '';
+  el.year.value = '';
+  // Reset by hand as well as by value: choosing the same file twice in a row fires no
+  // `change` event if the input still holds it.
+  const file = document.querySelector<HTMLInputElement>('#file');
+  if (file) file.value = '';
+  el.pasteStat.textContent = 'Nothing pasted yet.';
+
+  // Everything a later paste or question would otherwise inherit.
+  for (const node of [
+    el.indexStat,
+    el.indexError,
+    el.askError,
+    el.shapeTitle,
+    el.shapeCards,
+    el.shapeWarnings,
+    el.timelineNote,
+    el.answerQ,
+    el.answerProse,
+    el.answerTimings,
+    el.answerWarnings,
+    el.answerDetails,
+    el.sourcesSummary,
+    el.sources,
+    el.suggestions,
+    el.ttlLine,
+    el.deleteStat,
+  ]) {
+    node.innerHTML = '';
+  }
+  el.answer.classList.remove('refused');
+
+  // Any button a request in flight may have disabled, or relabelled with a spinner.
+  el.indexButton.disabled = false;
+  el.indexButton.textContent = 'Index it';
+  el.askButton.disabled = false;
+  el.askButton.textContent = 'Ask';
+  el.deleteButton.disabled = false;
+
+  // 🔴 INSTANT, not smooth, and not the page's own `scroll-behavior: smooth`.
+  //
+  // The document collapses to a short page the moment this runs, so a smooth scroll is
+  // animation over content that has already vanished — and it leaves the reader (and a
+  // test) looking at a position that is still moving. `scroll-behavior: smooth` in the
+  // stylesheet applies to `behavior: 'auto'` too, so 'instant' is the only value that
+  // actually means now.
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
 
 /* ------------------------------------------------------------------ step 2 */
 
@@ -516,14 +610,20 @@ async function deleteNow(): Promise<void> {
   try {
     const response = await fetch(`./api/document/${current.id}`, { method: 'DELETE' });
     const body = (await response.json()) as { deleted?: boolean };
-    el.deleteStat.textContent = body.deleted
-      ? 'Deleted — the entries, the notes, the embeddings and the text are all gone.'
-      : 'It had already gone.';
-    current = null;
-    el.step3.hidden = true;
-    el.shape.hidden = true;
-    el.paste.value = '';
-    updatePasteStat();
+    // 🔴 THE REPORT IS TAKEN OFF THE PANEL BEFORE THE PANEL IS PUT AWAY.
+    //
+    // The reset hides step 4, which is the panel the reader is standing in and the panel
+    // this message used to be written into — writing it there first and resetting after
+    // would erase it, and the reader would see the page go blank with no word about
+    // whether the delete worked. So the outcome is held, the page is put back, and the
+    // outcome is then shown in the floating notice.
+    const deleted = body.deleted === true;
+    resetToHome();
+    showToast(
+      deleted
+        ? 'Deleted. The entries, the notes, the embeddings and the text are all gone.'
+        : 'It had already gone — there was nothing left to delete.'
+    );
   } catch {
     el.deleteStat.textContent = 'The delete did not go through. Try again.';
   } finally {
@@ -681,7 +781,7 @@ function renderDetails(details: AnswerDetails, sources: Source[]): void {
   boxes.push(
     `<div class="detail" style="grid-column:1/-1">
       <h4>How well each note matched</h4>
-      <p style="margin:0 0 8px;font-size:12.5px;color:#8f87ad">${
+      <p style="margin:0 0 8px;font-size:12.5px;color:#7ba1a8">${
         sources.some((s) => s.rerank !== null)
           ? 'Scored by the reranker, which reads the question and the note together.'
           : 'Cosine similarity — how close the meaning of the note is to the question.'

@@ -1,11 +1,15 @@
-# rag — ask any document
+# rag-demo
 
 **Paste an article, a diary, a resume or a set of terms. Then ask it questions.**
 The answer quotes the document, and beside it you get the **dates**, **places**,
 **people** and **images** it rests on — so you can check the answer instead of trusting
 it.
 
-Live at **https://rag.nodejavascript.com** · **private repo** `git@gitlab.com:dvsmcp/rag.git`
+Live at **https://rag-demo.nodejavascript.com** · **private repo** `git@gitlab.com:dvsmcp/rag.git`
+
+The name matches its two siblings — `llm-demo` and `vision-demo` — and the **document title
+is the sub-domain and the domain**, because the page should be called the same thing the
+address bar calls it. `rag.nodejavascript.com` still answers: it redirects here permanently.
 
 ---
 

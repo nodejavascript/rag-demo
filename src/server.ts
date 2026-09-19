@@ -378,7 +378,7 @@ const sweeper = setInterval(sweep, 600_000);
 sweeper.unref();
 
 server.listen(PORT, HOST, () => {
-  console.log(`rag listening on http://${HOST}:${PORT}`);
+  console.log(`rag-demo listening on http://${HOST}:${PORT}`);
   console.log(
     `provider=${model.config.provider} chat=${model.config.chatModel} embed=${model.config.embedModel} rerank=${model.config.rerankModel ?? 'none'}`
   );

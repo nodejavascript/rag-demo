@@ -1,26 +1,37 @@
 /* ============================================================================
-   rag.nodejavascript.com — the page.
+   rag-demo.nodejavascript.com — the page.
 
    Dark, because a document is read for a while and a bright page is tiring, and
    because the answer panels are easier to pick out of a dark field than out of a
    white one. One accent colour, used for one thing at a time: what you are meant
    to look at next.
+
+   Teal, not purple. The palette below is the same structure it always had — one
+   very dark ground, three panel steps, one accent and one strong accent — with the
+   hue moved from ~258 degrees to ~172. Every colour that was written by hand rather
+   than through a variable was moved with it, and they are marked so they stay
+   together: a purple left in one gradient is obvious the moment the page loads.
+
+   The margins are copied from llm-demo on purpose: a 940px container, 20px of side
+   inset at EVERY width, and the vertical rhythm on the container itself. Two sites
+   by the same hand should not disagree about where the edge is.
    ========================================================================= */
 
 :root {
-  --bg: #08060f;
-  --bg-2: #0d0a18;
-  --panel: #130e22;
-  --panel-2: #1a1330;
-  --panel-3: #221939;
-  --ink: #edeaf8;
-  --ink-2: #c3bcdd;
-  --muted: #8f87ad;
-  --line: #291f45;
-  --line-2: #372a5c;
-  --accent: #a78bfa;
-  --accent-2: #7c5cff;
-  --accent-soft: rgba(167, 139, 250, 0.14);
+  --container: 940px;
+  --bg: #03090b;
+  --bg-2: #061114;
+  --panel: #08181c;
+  --panel-2: #0c2126;
+  --panel-3: #112d33;
+  --ink: #e6f6f8;
+  --ink-2: #b2d3d8;
+  --muted: #7ba1a8;
+  --line: #123037;
+  --line-2: #1b434b;
+  --accent: #5eead4;
+  --accent-2: #14b8a6;
+  --accent-soft: rgba(94, 234, 212, 0.14);
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #fb7185;
@@ -37,8 +48,8 @@ html { scroll-behavior: smooth; }
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 600px at 15% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
-    radial-gradient(900px 500px at 95% 0%, rgba(167, 139, 250, 0.10), transparent 55%),
+    radial-gradient(1200px 600px at 15% -10%, rgba(20, 184, 166, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 95% 0%, rgba(94, 234, 212, 0.09), transparent 55%),
     var(--bg);
   color: var(--ink);
   font-family: var(--sans);
@@ -50,7 +61,8 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
+/* The container. 940px and a 20px side inset at every width, matching llm-demo. */
+.wrap { max-width: var(--container); margin: 0 auto; padding-inline: 20px; }
 
 /* ---------- header ---------- */
 
@@ -59,7 +71,7 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 20;
   backdrop-filter: blur(14px);
-  background: rgba(8, 6, 15, 0.82);
+  background: rgba(3, 9, 11, 0.82);
   border-bottom: 1px solid var(--line);
 }
 .top-in {
@@ -85,13 +97,14 @@ a:hover { text-decoration: underline; }
 .top nav a { color: var(--ink-2); }
 @media (max-width: 620px) {
   .top nav { display: none; }
-  .wrap { padding-inline: 16px; }
   .charts { grid-template-columns: 1fr; }
 }
 
 /* ---------- hero ---------- */
 
-.hero { padding-block: 58px 26px; }
+/* llm-demo's hero rhythm: 26px above, 34px below. It was 58/26, which pushed the
+   first card most of a screen down. */
+.hero { padding-block: 26px 34px; }
 .hero h1 {
   font-size: clamp(34px, 6vw, 58px);
   line-height: 1.04;
@@ -125,7 +138,7 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius);
   padding: 24px;
   margin: 18px 0;
-  box-shadow: 0 22px 60px -40px rgba(124, 92, 255, 0.5);
+  box-shadow: 0 22px 60px -40px rgba(20, 184, 166, 0.5);
 }
 .step-head { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; }
 .step-n {
@@ -151,7 +164,7 @@ textarea#paste {
   width: 100%;
   min-height: 210px;
   resize: vertical;
-  background: #0a0716;
+  background: #04100f;
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -163,8 +176,8 @@ textarea#paste {
   transition: border-color 0.15s;
 }
 textarea#paste:focus { border-color: var(--accent-2); }
-textarea#paste.drop { border-color: var(--accent); background: #0f0a20; }
-textarea#paste::placeholder { color: #5c5480; }
+textarea#paste.drop { border-color: var(--accent); background: #08201f; }
+textarea#paste::placeholder { color: #4d7a7f; }
 
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .row.tight { margin-top: 8px; gap: 8px; }
@@ -186,10 +199,12 @@ button:hover, .btn:hover { background: var(--panel-3); border-color: var(--accen
 button:active { transform: translateY(1px); }
 button[disabled] { opacity: 0.45; cursor: not-allowed; }
 button.primary {
-  background: linear-gradient(180deg, var(--accent-2), #6444e6);
-  border-color: #8b6cff;
+  /* Grey-teal, not the bright accent: white text needs a dark ground, and the accent
+     is for things you read, not things you press. */
+  background: linear-gradient(180deg, var(--accent-2), #0b7d72);
+  border-color: #2dd4bf;
   color: #fff;
-  box-shadow: 0 10px 30px -14px rgba(124, 92, 255, 0.9);
+  box-shadow: 0 10px 30px -14px rgba(20, 184, 166, 0.9);
 }
 button.primary:hover { filter: brightness(1.08); }
 button.ghost { background: transparent; }
@@ -201,7 +216,7 @@ input[type="text"], input[type="number"], input[type="search"] {
   font: inherit;
   font-size: 14px;
   color: var(--ink);
-  background: #0a0716;
+  background: #04100f;
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 9px 12px;
@@ -243,7 +258,7 @@ input:focus { border-color: var(--accent-2); }
 
 .answer-wrap { margin: 0 0 18px; }
 .answer {
-  background: linear-gradient(180deg, #1b1330, #140e24);
+  background: linear-gradient(180deg, #0d2a30, #081a1e);
   border: 1px solid var(--line-2);
   border-left: 3px solid var(--accent);
   border-radius: 12px;
@@ -294,7 +309,7 @@ input:focus { border-color: var(--accent-2); }
 .chip.inferred::after { content: " (year worked out)"; color: var(--muted); font-size: 11px; }
 
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
-.thumb { border-radius: 9px; overflow: hidden; border: 1px solid var(--line-2); background: #0a0716; }
+.thumb { border-radius: 9px; overflow: hidden; border: 1px solid var(--line-2); background: #04100f; }
 .thumb img { display: block; width: 100%; height: 84px; object-fit: cover; }
 .thumb figcaption { font-size: 11px; color: var(--muted); padding: 5px 7px; }
 
@@ -357,11 +372,37 @@ section.block p { color: var(--ink-2); max-width: 76ch; }
 footer {
   border-top: 1px solid var(--line);
   margin-top: 30px;
-  padding-block: 26px 46px;
+  /* llm-demo's footer: 26px above, 40px below. */
+  padding-block: 26px 40px;
   color: var(--muted);
   font-size: 13.5px;
 }
 footer .foot-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 10px; }
+
+/* ---------- the floating notice ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 14px);
+  z-index: 60;
+  max-width: min(560px, calc(100vw - 40px));
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-2);
+  color: var(--ink);
+  font-size: 14px;
+  box-shadow: 0 20px 50px -24px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s, transform 0.22s, visibility 0.22s;
+}
+.toast.on { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
 
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
