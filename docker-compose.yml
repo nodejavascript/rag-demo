@@ -1,0 +1,63 @@
+# =============================================================================
+# rag — one app container, and nothing else on the host belongs to it.
+#
+# The Caddy that serves the nine other sites on this droplet runs on the HOST (a
+# systemd unit reading /etc/caddy/Caddyfile), so this stack publishes the app on
+# loopback only and Caddy reverse-proxies to it. That keeps certificate renewal and
+# the other sites exactly as they were.
+#
+# The `deploy.resources` limits are not decoration. This box has 1 GB of RAM shared
+# with nine other sites and a Postgres; an unbounded Node process plus a large paste
+# would take the whole machine down, and the blast radius would be every site George
+# runs, not this one.
+# =============================================================================
+
+services:
+  rag:
+    build: .
+    image: rag:latest
+    container_name: rag
+    restart: unless-stopped
+    ports:
+      # Loopback only. Caddy on the host is the only thing that may reach it.
+      - "127.0.0.1:4500:4500"
+    environment:
+      PORT: "4500"
+      HOST: "0.0.0.0"
+      DB_PATH: "/data/rag.db"
+      # How long an anonymous paste is kept before the sweeper removes it.
+      DOC_TTL_HOURS: "24"
+      # Hard ceiling on a paste, in characters. Beyond this the index is slow to
+      # search and crowds the memory the other sites on this host need.
+      MAX_DOCUMENT_CHARS: "400000"
+      # Two pastes may be embedded at once; the rest wait rather than thrash.
+      MAX_CONCURRENT_INDEX: "2"
+      INDEX_PER_HOUR: "40"
+      ASK_PER_HOUR: "240"
+      # --- the model -------------------------------------------------------
+      # `ollama`   → a model on the same machine. No key, no vendor.
+      # `openai`   → anything speaking the OpenAI shape, including DigitalOcean
+      #              Gradient AI (https://inference.do-ai.run/v1).
+      MODEL_PROVIDER: "ollama"
+      MODEL_BASE_URL: "http://host.docker.internal:11434"
+      CHAT_MODEL: "qwen2.5:7b"
+      EMBED_MODEL: "nomic-embed-text"
+      # A cross-encoder is a real quality win when the provider has one. Measured
+      # per embedding model — never carry a floor over from another one.
+      RERANK_MODEL: ""
+      REFUSAL_FLOOR: "0.56"
+    extra_hosts:
+      # So the container can reach an Ollama running on the host, if that is how the
+      # models are served. Unused when MODEL_BASE_URL points somewhere remote.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rag-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 96M
+
+volumes:
+  rag-data:

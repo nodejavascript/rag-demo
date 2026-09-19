@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ask any document — rag</title>
+    <meta
+      name="description"
+      content="Paste an article, a diary, a resume or a set of terms, then ask it questions. The answers quote the document and come with the dates, places, people and images they rest on."
+    />
+    <link rel="canonical" href="https://rag.nodejavascript.com/" />
+    <meta name="theme-color" content="#08060f" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="rag" />
+    <meta property="og:title" content="Ask any document — rag" />
+    <meta
+      property="og:description"
+      content="Paste an article, a diary or a resume, then ask it questions. Grounded answers with the dates, places, people and images they rest on."
+    />
+    <meta property="og:url" content="https://rag.nodejavascript.com/" />
+    <meta property="og:image" content="https://rag.nodejavascript.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ask any document — rag" />
+    <meta
+      name="twitter:description"
+      content="Paste an article, a diary or a resume, then ask it questions. Grounded answers with the dates, places, people and images they rest on."
+    />
+    <meta name="twitter:image" content="https://rag.nodejavascript.com/og.png" />
+
+    <link rel="stylesheet" href="./styles.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "rag — ask any document",
+            "url": "https://rag.nodejavascript.com/",
+            "applicationCategory": "UtilitiesApplication",
+            "operatingSystem": "Any browser",
+            "description": "Paste a long text — an article, a diary, a resume, a policy — and ask it questions. Answers are grounded in the document and shown with the dates, places, people and images they rest on.",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CAD" },
+            "isAccessibleForFree": true
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What can I paste into it?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Any long text. A diary, a journal, an article, a resume, a set of terms, a policy, a transcript, a log. Plain text, markdown, and text copied out of a web page all work, and a text file can be dropped onto the box."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where does my document go?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "It is sent to the model provider that writes the answers, and it is held on the server only so that your next question can reach it. Nothing is kept after it expires or after you press Delete this document now."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it make up answers?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "It is built not to. Every count and every date is worked out by the program rather than by the model, a question the document says nothing about is refused rather than guessed at, and every answer is shown with the notes it came from so it can be checked."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why does it show dates, places and images next to the answer?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Because an answer is easier to trust when you can see what it rests on. The dates, places, people, amounts and pictures are all found in the document by the program, not written by the model, so they are a check on the answer rather than part of it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-in">
+        <div class="brand">
+          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="15" fill="none" stroke="#7c5cff" stroke-width="1.6" opacity="0.55" />
+            <circle cx="16" cy="16" r="5.4" fill="#a78bfa" />
+            <circle cx="16" cy="16" r="9.4" fill="none" stroke="#a78bfa" stroke-width="1.3" opacity="0.5" />
+            <circle cx="25.4" cy="16" r="1.9" fill="#fbbf24" />
+          </svg>
+          <div>
+            <div class="brand-name">rag</div>
+            <div class="brand-sub">nodejavascript.com</div>
+          </div>
+        </div>
+        <nav>
+          <a href="#how">How it works</a>
+          <a href="#not">What it is not</a>
+          <a href="#privacy">Privacy</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap hero">
+        <h1>Ask any document</h1>
+        <p class="lede">
+          Paste an article, a diary, a resume or a set of terms — anything long. Then ask it questions.
+          The answer quotes the document, and beside it you get the <b>dates</b>, <b>places</b>,
+          <b>people</b> and <b>images</b> it actually rests on, so you can check it instead of trusting it.
+        </p>
+        <ul>
+          <li><b>It refuses rather than guesses.</b> A question the document says nothing about is refused — in milliseconds, without asking a model at all.</li>
+          <li><b>Every number is counted by the program.</b> A model cannot count, so it is never asked to. If it says a word appears 47 times, that was counted over the whole document in code.</li>
+          <li><b>Every answer shows its working.</b> The notes it came from, what each scored, and which dates and places it used.</li>
+        </ul>
+      </div>
+
+      <div class="wrap">
+        <!-- ============ 1 ============ -->
+        <section class="step" id="step-1">
+          <div class="step-head"><div class="step-n">1</div><h2>Give it something to read</h2></div>
+          <p class="hint">
+            Paste it, or drop a <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.html</code> or
+            <code>.pdf</code> file anywhere on this box. Text copied straight out of a web page is fine — the
+            tags come off for you, and a PDF is read for you.
+          </p>
+
+          <div class="paste-wrap">
+            <label class="sr" for="paste">The document</label>
+            <textarea id="paste" spellcheck="false" placeholder="Paste a diary, an article, a resume, a policy, a set of terms — anything long enough to be worth asking about.
+
+It works best when the document has its own structure: dates on their own line, or headings, or a role and a period. That is what lets the tool work out a timeline and label the notes it quotes."></textarea>
+          </div>
+
+          <div class="row">
+            <button type="button" id="pick-file">Choose a file</button>
+            <button type="button" id="use-diary" class="ghost">Try a diary</button>
+            <button type="button" id="use-resume" class="ghost">Try a resume</button>
+            <button type="button" id="clear" class="ghost">Clear</button>
+            <input type="file" id="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
+            <span class="grow"></span>
+            <label class="field">
+              <span>Year for entries that write no year</span>
+              <input type="number" id="year" class="year" placeholder="2026" min="1900" max="2100" />
+            </label>
+          </div>
+          <p class="statline" id="paste-stat">Nothing pasted yet.</p>
+          <div id="health"></div>
+        </section>
+
+        <!-- ============ 2 ============ -->
+        <section class="step" id="step-2" hidden>
+          <div class="step-head"><div class="step-n">2</div><h2>Index it</h2></div>
+          <p class="hint" id="index-hint">
+            This splits the document into entries, works out its dates, finds the places, people, amounts
+            and pictures, and embeds every note so it can be searched by meaning.
+          </p>
+          <div class="row">
+            <button type="button" id="index" class="primary">Index it</button>
+            <span class="statline" id="index-stat"></span>
+          </div>
+          <div id="index-error"></div>
+
+          <div id="shape" hidden>
+            <div class="row tight"><span class="statline" id="shape-title"></span></div>
+            <div class="cards" id="shape-cards"></div>
+            <div class="charts">
+              <div class="chart-box">
+                <h3>The shape of it over time</h3>
+                <p id="timeline-note">Entries per month, counted by the program.</p>
+                <canvas id="timeline" height="190"></canvas>
+              </div>
+              <div class="chart-box">
+                <h3>What it is about</h3>
+                <p>The places, people and amounts it mentions most, counted by the program.</p>
+                <canvas id="composition" height="190"></canvas>
+              </div>
+            </div>
+            <div id="shape-warnings"></div>
+          </div>
+        </section>
+
+        <!-- ============ 3 ============ -->
+        <section class="step" id="step-3" hidden>
+          <div class="step-head"><div class="step-n">3</div><h2>Ask it something</h2></div>
+          <p class="hint">
+            Ask in your own words. It looks for what the document <em>says</em> about the subject, not for
+            whether your exact words appear.
+          </p>
+
+          <div class="row">
+            <label class="sr" for="question">Your question</label>
+            <input
+              type="text"
+              id="question"
+              class="grow"
+              placeholder="What happened on 6 March?"
+              autocomplete="off"
+              style="flex: 1 1 260px"
+            />
+            <button type="button" id="ask" class="primary">Ask</button>
+          </div>
+          <div class="row tight" id="suggestions"></div>
+          <div id="ask-error"></div>
+
+          <div class="answer-wrap" id="answer-wrap" hidden>
+            <div class="answer" id="answer">
+              <p class="q" id="answer-q"></p>
+              <div class="prose" id="answer-prose"></div>
+              <div class="timings" id="answer-timings"></div>
+            </div>
+            <div id="answer-warnings"></div>
+            <div class="details" id="answer-details"></div>
+
+            <details class="sources" id="sources-wrap">
+              <summary id="sources-summary">The notes this came from</summary>
+              <ol id="sources"></ol>
+            </details>
+          </div>
+        </section>
+
+        <!-- ============ keep / delete ============ -->
+        <section class="step" id="step-4" hidden>
+          <div class="step-head"><div class="step-n">4</div><h2>It goes away on its own</h2></div>
+          <p class="hint" id="ttl-line"></p>
+          <div class="row">
+            <button type="button" id="delete" class="danger">Delete this document now</button>
+            <span class="statline" id="delete-stat"></span>
+          </div>
+        </section>
+
+        <!-- ============ how ============ -->
+        <section class="block" id="how">
+          <h2>How it works</h2>
+          <p>
+            Four steps, in the order the data moves through them. Each one is there because of something
+            that went wrong without it.
+          </p>
+          <div class="two-col" style="margin-top: 16px">
+            <div class="note">
+              <h3>1 · It reads the shape of the document</h3>
+              <ul>
+                <li>A heading only starts a new entry when the line beneath it ends in a <b>full stop</b>. Without that rule a set of terms — short standalone lines — becomes one empty entry per line and most of the text disappears.</li>
+                <li>A date is claimed only when the <b>day, the month and the year were all written</b>. <code>March 2026</code> is a month, not a day, and <code>06/03/2026</code> is left alone because it reads two ways.</li>
+                <li>Dates written without a year are carried forward, and the answer <b>says the year was worked out</b> rather than written.</li>
+              </ul>
+            </div>
+            <div class="note">
+              <h3>2 · It searches two ways at once</h3>
+              <ul>
+                <li><b>By meaning</b> — every note is embedded, so a question phrased differently still finds it.</li>
+                <li><b>By word</b> — a real keyword index over the notes, so an exact name or date is never missed.</li>
+                <li>The two rankings are fused by <b>rank</b>, not by score, because the two scores have no common scale. A note found by <i>both</i> is the strongest signal there is.</li>
+              </ul>
+            </div>
+            <div class="note">
+              <h3>3 · The numbers are counted in code</h3>
+              <ul>
+                <li>Asked how many entries mentioned something, an early version answered <b>“7”</b> — it had counted the eight notes it could see. A model cannot count, so it is not asked to.</li>
+                <li>Every figure shown is computed over the <b>whole document</b> and handed over as a fact the model is forbidden to recompute.</li>
+                <li>The places, people, amounts and images beside an answer are all found by the program too — they are a <b>check on</b> the answer, not part of it.</li>
+              </ul>
+            </div>
+            <div class="note">
+              <h3>4 · It refuses two different ways</h3>
+              <ul>
+                <li><b>Nothing matched at all</b> — refused by the search itself, in milliseconds, without calling a model. That refusal is a fact about the document.</li>
+                <li><b>The subject is there but the detail is not</b> — the model refuses, helped by a code-computed fact that a <i>name</i> appears nowhere in the document. That fact is only ever asserted for a proper noun, never for a common word.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ not ============ -->
+        <section class="block" id="not">
+          <h2>What this is, and what it is not</h2>
+          <div class="two-col">
+            <div class="note">
+              <h3>It is</h3>
+              <ul>
+                <li>A way to ask a long document a question and get an answer you can check.</li>
+                <li>Honest about what it does not know — refusals are a feature, and they are cheap.</li>
+                <li>Built so that every claim in an answer can be traced to the note it came from.</li>
+              </ul>
+            </div>
+            <div class="note">
+              <h3>It is not</h3>
+              <ul>
+                <li>A place for anything confidential. <b>Your document is sent to a model provider to answer each question.</b> It is deleted on expiry or on request, but it does leave this machine — so use the local build if the text is private.</li>
+                <li>An oracle. It answers about the document in front of it and nothing else. It has no knowledge of the world and will not supply any.</li>
+                <li>A lawyer, a doctor or an accountant. If you paste a contract, it will tell you what the contract says, not whether you should sign it.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ privacy ============ -->
+        <section class="block" id="privacy">
+          <h2>Privacy</h2>
+          <p>
+            Your document is held on the server so your next question can reach it, and it is deleted
+            automatically. <b>Press “Delete this document now” and it is gone immediately</b> — the entries,
+            the notes, the embeddings and the file itself, in one transaction.
+          </p>
+          <p>
+            To answer a question, the notes that matched are sent to the model provider along with the
+            question. Nothing else is sent — not the whole document, and not the parts that did not match.
+            The document and the questions are never written to the log; only sizes and timings are.
+          </p>
+          <h3 style="font-size: 15px; margin-top: 22px">This is a prototype</h3>
+          <p>
+            There is no account, no analytics and no tracking of any kind on this page. There is
+            deliberately no cookie. If that changes, this paragraph will say so before anything loads.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <div class="foot-links">
+          <a href="#how">How it works</a>
+          <a href="#not">What it is not</a>
+          <a href="#privacy">Privacy</a>
+        </div>
+        <p>© 2026 rag.nodejavascript.com. All rights reserved.</p>
+      </div>
+    </footer>
+
+    <script type="module" src="./app.js?v=1"></script>
+  </body>
+</html>

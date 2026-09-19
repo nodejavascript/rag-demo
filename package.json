@@ -1,0 +1,28 @@
+{
+  "name": "rag",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Paste an article, a diary or a resume, ask it questions, get grounded answers with the dates, places, people and images they rest on.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.site.json",
+    "start": "npm run build && node --experimental-sqlite dist/server.js",
+    "serve": "node --experimental-sqlite dist/server.js",
+    "ask": "node --experimental-sqlite dist/cli.js",
+    "test": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js",
+    "test:live": "npm run build && node --experimental-sqlite --test test/live.test.js",
+    "test:e2e": "npm run build && node --experimental-sqlite --test test/e2e.test.js",
+    "test:all": "npm run build && node --experimental-sqlite --test test/dates.test.js test/text.test.js test/enrich.test.js test/pipeline.test.js test/e2e.test.js",
+    "fixture": "node tools/make-fixture.mjs",
+    "eval": "npm run build && node --experimental-sqlite tools/eval.mjs",
+    "calibrate": "npm run build && node --experimental-sqlite tools/calibrate.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3"
+  }
+}
