@@ -111,8 +111,8 @@ drift back.
 **`ollama`** — a model on the same machine. No key, no vendor, and the reason a local
 build can promise nothing is uploaded.
 
-**`openai`** — anything speaking the OpenAI HTTP shape, which includes **DigitalOcean
-Gradient AI** (`https://inference.do-ai.run/v1`), DeepSeek, Groq, Together and OpenAI.
+**`openai`** — anything speaking the OpenAI HTTP shape, which includes **Cloudflare
+Workers AI**, DigitalOcean Gradient AI, Groq, Together and OpenAI.
 
 ```bash
 MODEL_PROVIDER=openai \
@@ -123,6 +123,41 @@ EMBED_MODEL=bge-m3 \
 RERANK_MODEL=bge-reranker-v2-m3 \
 npm start
 ```
+
+### The provider the demo actually runs on: Cloudflare Workers AI
+
+Free, always on, and on an account George already owns — **no payment method, no model
+access key, no card.** One command does the whole cutover:
+
+```bash
+tools/use-workers-ai.sh --check   # does the token work?  changes nothing
+tools/use-workers-ai.sh           # configure the droplet and verify the live site
+```
+
+It needs one credential, created once by hand, because **nothing on this machine can
+create it**: the DNS-scoped token is refused by Workers AI, and the `wrangler` session is
+refused too — its own scope list names `ai:write` as missing, and it is likewise refused
+for token management, so it cannot mint one either.
+
+> `dash.cloudflare.com/profile/api-tokens` → **Create Token** → **Custom token**
+> → Permissions **Account → Workers AI → Read**, Resources **Include → your account**.
+> Save it to `~/Documents/secrets/.cloudflare_workers_ai_token`. **Never paste it into a
+> chat** — the script reads the file and prints nothing.
+
+The endpoint is `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1`, models are
+named `@cf/...`, and the defaults are **`@cf/meta/llama-3.1-8b-instruct`** with
+**`@cf/baai/bge-m3`** — an 8B class model on purpose, because the free allowance is
+measured in neurons and a 70B model spends them several times faster.
+
+🔴 **A TRAP THAT WAS FOUND BEFORE IT SHIPPED.** The readiness probe asks the provider for
+its model catalogue, because that is free and spends no tokens. **Cloudflare refuses
+`GET /models` with a 405** — the route exists, but not for GET — so a plain
+`!response.ok` reported a working provider as unreachable: the site would have said *"the
+model is not reachable"* while answering every question correctly. `health()` now reads
+the codes for what they mean — 401/403 refused credential, 402 no entitlement, 5xx their
+fault, **404/405 no catalogue, which is not a fault** — and `test/model.test.js` holds
+that in place. It was found by calling the route with no credentials at all, where the
+status says which of the three is true.
 
 **A hosted model changes the privacy claim, and the page says so.** With Ollama the
 document never leaves the machine. With a hosted provider the notes that matched are

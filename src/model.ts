@@ -58,10 +58,19 @@ export interface ModelConfig {
   embedBatch: number;
 }
 
-function readKey(): string | null {
-  const inline = process.env.MODEL_API_KEY?.trim();
+/**
+ * The key, from the environment it was ASKED ABOUT.
+ *
+ * 🔴 `env` is a parameter, not the global. It was read from `process.env` directly until a
+ * test built a configuration from a supplied environment and the key quietly came from
+ * somewhere else — a function that accepts an environment has to honour it, or the
+ * parameter is a decoration and the only way to test the key path is to mutate the
+ * process. Found by `test/model.test.js`.
+ */
+function readKey(env: NodeJS.ProcessEnv): string | null {
+  const inline = env.MODEL_API_KEY?.trim();
   if (inline) return inline;
-  const file = process.env.MODEL_API_KEY_FILE?.trim();
+  const file = env.MODEL_API_KEY_FILE?.trim();
   if (!file) return null;
   try {
     return readFileSync(file, 'utf8').trim() || null;
@@ -98,7 +107,7 @@ export function modelConfig(env: NodeJS.ProcessEnv = process.env): ModelConfig {
   return {
     provider,
     baseUrl: (explicit ?? 'https://inference.do-ai.run/v1').replace(/\/$/, ''),
-    apiKey: readKey(),
+    apiKey: readKey(env),
     chatModel: env.CHAT_MODEL?.trim() || 'openai-gpt-oss-20b',
     embedModel: env.EMBED_MODEL?.trim() || 'bge-m3',
     rerankModel: env.RERANK_MODEL?.trim() || null,
@@ -306,8 +315,39 @@ export class Model {
         headers: this.#headers(),
         signal: AbortSignal.timeout(6000),
       });
+
+      // 🔴 A MISSING ENDPOINT IS NOT A BROKEN MODEL, and this is the line where that is
+      // decided. The probe below asks the provider for its model catalogue because that
+      // is free and spends no tokens — but not every provider publishes one.
+      //
+      // **Cloudflare's OpenAI-compatible endpoint refuses `GET /models` with a 405.** A
+      // plain `!response.ok` therefore reported a perfectly working provider as
+      // unreachable: the site would have said "the model is not reachable" while
+      // answering every question correctly. It was found by calling the route with NO
+      // credentials, where the status code says which of three things is true —
+      // **401 means the route is real**, **405 means it is real but not for GET**, and
+      // **404 means it is not there at all.**
+      //
+      // So the codes are read for what they mean rather than lumped together:
+      //
+      //   401 / 403  the credential was refused — a real fault, and a fixable one
+      //   402        the account is not entitled to inference — a real fault
+      //   404 / 405  this provider publishes no catalogue — NOT a fault
+      //   5xx        the provider's own side is down — a real fault
+      //
+      // A provider with no catalogue is reported as up, with the reason said plainly, so
+      // nobody is ever told that a working site is broken. The first real question is
+      // the true test, and it fails loudly and specifically if the credential is wrong.
+      if (response.status === 404 || response.status === 405) {
+        return { ok: true, detail: `${this.config.chatModel} + ${this.config.embedModel} (no catalogue published)` };
+      }
       if (!response.ok) {
-        const hint = response.status === 402 ? 'inference not enabled on the account' : `HTTP ${response.status}`;
+        const hint =
+          response.status === 401 || response.status === 403
+            ? 'the model credential was refused'
+            : response.status === 402
+              ? 'inference is not enabled on that account'
+              : `HTTP ${response.status}`;
         return { ok: false, detail: hint };
       }
       return { ok: true, detail: `${this.config.chatModel} + ${this.config.embedModel}` };
