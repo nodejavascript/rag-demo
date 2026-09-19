@@ -64,6 +64,18 @@ a:hover { text-decoration: underline; }
 /* The container. 940px and a 20px side inset at every width, matching llm-demo. */
 .wrap { max-width: var(--container); margin: 0 auto; padding-inline: 20px; }
 
+/*
+ * The body's vertical rhythm, and it belongs here rather than on the hero.
+ *
+ * 🔴 MEASURED AGAINST llm-demo, WHICH IS WHY IT EXISTS. llm-demo puts 32px of padding on
+ * `main`, so its heading sits **125px** below the top of the page; rag had no `main`
+ * padding at all and its heading sat at **86px** — nearly 40px higher, which is why the
+ * page read as cramped at the top even after the hero was matched. The 60px at the bottom
+ * is the other half: it is what separates the last card from the footer, and it is why the
+ * footer itself needs no top margin.
+ */
+main { padding-block: 32px 60px; }
+
 /* ---------- header ---------- */
 
 .top {
@@ -79,10 +91,19 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 14px;
   /* padding-BLOCK, not padding. These elements also carry `.wrap`, and writing
-     `padding: 12px 0` here silently wiped the 22px side inset — the whole page then
+     `padding: 12px 0` here silently wiped the side inset — the whole page then
      sat flush against the screen edge on a phone. Setting only the block axis cannot
      clobber the axis it does not name. */
-  padding-block: 12px;
+  /*
+   * 🔴 THE HEADER IS FULL-BLEED, NOT CONTAINED. llm-demo's header carries its own 20px inset
+   * and spans the viewport, so its brand sits **20px** from the edge while everything below
+   * it is inset to the 940px container — measured at 1280px wide: brand at 20, body at 190.
+   * rag had the header inside the container, so its brand sat at 190 and the sticky bar
+   * looked like a card rather than a bar. `max-width: none` undoes the `.wrap` this element
+   * also carries; it comes later in the file, so it wins.
+   */
+  max-width: none;
+  padding: 12px 20px;
 }
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand svg { display: block; }
@@ -137,7 +158,9 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 24px;
-  margin: 18px 0;
+  /* llm-demo's card rhythm: bottom only. `18px 0` put a gap above the first card as well,
+     which stacked onto the hero's own bottom padding and opened a hole under the heading. */
+  margin: 0 0 22px;
   box-shadow: 0 22px 60px -40px rgba(20, 184, 166, 0.5);
 }
 .step-head { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; }
@@ -371,13 +394,16 @@ section.block p { color: var(--ink-2); max-width: 76ch; }
 
 footer {
   border-top: 1px solid var(--line);
-  margin-top: 30px;
-  /* llm-demo's footer: 26px above, 40px below. */
-  padding-block: 26px 40px;
+  /* No margin-top: llm-demo has none either, because `main`'s 60px bottom padding already
+     does that work. Both together opened a 90px void above the border. */
+  padding: 26px 20px 40px;
+  /* Centred, like llm-demo's. It was left-aligned inside the container, which read as a
+     stray paragraph rather than a footer. */
+  text-align: center;
   color: var(--muted);
   font-size: 13.5px;
 }
-footer .foot-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 10px; }
+footer .foot-links { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-bottom: 10px; }
 
 /* ---------- what the document does not say ---------- */
 
@@ -428,6 +454,8 @@ footer .foot-links { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 1
   padding: 3px 10px;
 }
 .gaps .once b { color: var(--ink); font-weight: 600; }
+.gaps ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.gaps li { font-size: 14.5px; color: var(--ink-2); }
 
 /* ---------- the floating notice ---------- */
 

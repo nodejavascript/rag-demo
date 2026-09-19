@@ -277,6 +277,37 @@ test('a refusal says which words the document does not have', async (t) => {
 });
 
 /**
+ * A well-formed document must produce NO conflict panel.
+ *
+ * 🔴 The assertion that matters more than the positive one. A panel claiming the reader's
+ * document contradicts itself is only worth having if it never says so wrongly — and this
+ * test is here because it did: run over the diary, the spelling check reported **`Tuesday`
+ * and `Thursday` as one name written two ways**. Two edits apart, and entirely different
+ * things. The unit tests cover the guards; this proves the page stays clean.
+ */
+test('a well-formed document is not accused of contradicting itself', async (t) => {
+  if (!page) return t.skip('no browser');
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  await page.fill('#question', 'What happened on 6 March 2026?');
+  await page.evaluate(() => document.getElementById('ask').click());
+  await page.waitForFunction(
+    () => !document.getElementById('answer-wrap').hidden && document.getElementById('answer-prose').innerText.length > 0,
+    null,
+    { timeout: 180000 }
+  );
+
+  const conflicts = await page.evaluate(() => ({
+    hidden: document.getElementById('conflicts').hidden,
+    body: document.getElementById('conflicts').innerText,
+  }));
+  assert.equal(conflicts.hidden, true, `the diary is well formed, so nothing may be reported. It said: ${conflicts.body}`);
+});
+
+/**
  * 🔴 THE REGRESSION THAT STARTED THIS FILE.
  *
  * George pasted his own resume and asked where he went to school. The page answered

@@ -92,6 +92,12 @@ interface Answer {
     presentCount: number;
     once: { value: string; kind: string }[];
   };
+  /** Where it disagrees with itself — also counted in code. See `conflicts.ts`. */
+  conflicts: {
+    outOfOrder: { at: number; label: string; date: string; previousDate: string; previousLabel: string }[];
+    spelledTwoWays: { a: string; b: string; kind: string }[];
+    ambiguous: { label: string; raw: string }[];
+  };
   details: AnswerDetails;
   computed: { kind: string; term?: string; value: number | string; first?: string | null; last?: string | null; entries?: number }[];
   timings: { retrieveMs: number; rerankMs: number; modelMs: number; totalMs: number };
@@ -342,6 +348,8 @@ const el = {
   ttlLine: $('ttl-line'),
   gaps: $('gaps'),
   gapsBody: $('gaps-body'),
+  conflicts: $('conflicts'),
+  conflictsBody: $('conflicts-body'),
 };
 
 /* ------------------------------------------------------------------ step 1 */
@@ -439,6 +447,7 @@ function resetToHome(): void {
   el.answerWrap.hidden = true;
   el.sourcesWrap.hidden = true;
   el.gaps.hidden = true;
+  el.conflicts.hidden = true;
 
   // The input side.
   el.paste.value = '';
@@ -468,6 +477,7 @@ function resetToHome(): void {
     el.sources,
     el.suggestions,
     el.gapsBody,
+    el.conflictsBody,
     el.ttlLine,
     el.deleteStat,
   ]) {
@@ -753,10 +763,67 @@ function renderGaps(gaps: Answer['gaps']): void {
   el.gaps.hidden = parts.length === 0;
 }
 
+/**
+ * Where the document disagrees with itself.
+ *
+ * Three checks only, and each is arithmetic over what the parser extracted — see
+ * `conflicts.ts` for why the list is that short. The wording keeps every claim at the level
+ * of what was actually proved: a name is reported as **written two ways**, which is a fact
+ * about spelling, and never as the same person, which would be an interpretation.
+ *
+ * Hidden when there is nothing to report, for the same reason as the other panel — a section
+ * that says "nothing" under every answer is a section people learn to skip.
+ */
+function renderConflicts(conflicts: Answer['conflicts']): void {
+  const parts: string[] = [];
+
+  if (conflicts.outOfOrder.length > 0) {
+    const rows = conflicts.outOfOrder
+      .map(
+        (item) =>
+          `<li><b>${esc(item.label)}</b> (${esc(item.date)}) comes after ` +
+          `<b>${esc(item.previousLabel)}</b> (${esc(item.previousDate)}) — the dates run backwards.</li>`
+      )
+      .join('');
+    parts.push(
+      `<p>These entries are out of date order, in the document's own order. Usually a missing ` +
+        `page, a block pasted in the wrong place, or a mistyped year:</p><ul>${rows}</ul>`
+    );
+  }
+
+  if (conflicts.spelledTwoWays.length > 0) {
+    const rows = conflicts.spelledTwoWays
+      .map(
+        (pair) =>
+          `<li><span class="term">${esc(pair.a)}</span> and <span class="term">${esc(pair.b)}</span> ` +
+          `— a ${esc(pair.kind)}, written two ways</li>`
+      )
+      .join('');
+    parts.push(
+      `<p>Written two ways. This is a fact about the spelling, not a claim that they are the ` +
+        `same thing — but a search for one of them will not find the other:</p><ul>${rows}</ul>`
+    );
+  }
+
+  if (conflicts.ambiguous.length > 0) {
+    const rows = conflicts.ambiguous
+      .map((item) => `<li><b>${esc(item.raw)}</b> — ${esc(item.label)}</li>`)
+      .join('');
+    parts.push(
+      `<p>Written so the day and the month could each be the other, so no date is claimed for ` +
+        `these and they are left off the timeline:</p><ul>${rows}</ul>`
+    );
+  }
+
+  el.conflictsBody.innerHTML = parts.join('');
+  el.conflicts.hidden = parts.length === 0;
+}
+
 function renderAnswer(answer: Answer): void {
   el.answerWrap.hidden = false;
   el.answerQ.innerHTML = `<b>You asked:</b> ${esc(answer.question)}`;
   renderGaps(answer.gaps);
+  renderConflicts(answer.conflicts);
 
   if (answer.mode === 'refused') {
     el.answer.classList.add('refused');

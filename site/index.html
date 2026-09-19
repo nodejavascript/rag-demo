@@ -231,6 +231,12 @@ It works best when the document has its own structure: dates on their own line, 
             <div id="answer-warnings"></div>
             <div class="details" id="answer-details"></div>
 
+            <aside class="gaps" id="conflicts" hidden>
+              <h3>Where the document disagrees with itself</h3>
+              <p class="gaps-tag">Also counted in code over the whole document.</p>
+              <div id="conflicts-body"></div>
+            </aside>
+
             <details class="sources" id="sources-wrap">
               <summary id="sources-summary">The notes this came from</summary>
               <ol id="sources"></ol>
@@ -363,6 +369,6 @@ It works best when the document has its own structure: dates on their own line, 
          report cannot live in the panel that was just removed. -->
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script type="module" src="./app.js?v=3"></script>
+    <script type="module" src="./app.js?v=4"></script>
   </body>
 </html>

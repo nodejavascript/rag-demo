@@ -18,6 +18,7 @@ import { buildMessages, isRefusal, readShape } from './prompt.js';
 import { retrieve, type RetrieveOptions } from './retrieve.js';
 import { factsFor } from './stats.js';
 import { analyseGaps } from './gaps.js';
+import { analyseConflicts } from './conflicts.js';
 import { AppError, type Answer, type AnswerDetails, type ComputedFact, type Mention, type Scored, type Source } from './types.js';
 import type { Store } from './store.js';
 import type { Model } from './model.js';
@@ -110,6 +111,14 @@ export async function answer(
     mentions: document.mentions,
   });
 
+  // Also computed, and also attached to both paths: a document that contradicts itself is
+  // worth knowing before you read any answer it gives.
+  const conflicts = analyseConflicts({
+    entries: store.entries(docId),
+    mentions: document.mentions,
+    documentText: store.documentText(docId),
+  });
+
   if (retrieval.silent) {
     return {
       question,
@@ -118,6 +127,7 @@ export async function answer(
       mode: 'refused',
       sources: [],
       gaps,
+      conflicts,
       details: {
         dates: [],
         places: [],
@@ -183,6 +193,7 @@ export async function answer(
     mode: refused ? 'refused' : 'grounded',
     sources,
     gaps,
+    conflicts,
     details: detailsFrom(retrieval.scored),
     computed: refused ? [] : computed,
     timings: {

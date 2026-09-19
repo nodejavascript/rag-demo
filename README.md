@@ -206,6 +206,37 @@ not that they are found.
 
 ---
 
+Where it disagrees with itself
+------------------------------
+
+A second panel, also counted in code, with three checks and no others:
+
+- **Entries out of date order**, in the document's own order. An out-of-order diary usually
+  means a missing page, a block pasted in the wrong place, or a mistyped year — all of which
+  change what the timeline means.
+- **A name written two ways** (`Grimsby` / `Grimbsy`). Worded as a fact about **spelling**,
+  never as "these are the same thing". One spelling finds nothing in a search, which is
+  exactly what a reader misses.
+- **A date that can be read two ways** (`06/03/2026`), named as written, because a document
+  containing one has dates that cannot all be trusted.
+
+**What is deliberately not checked:** whether two mentions are the same thing, whether a
+number matches its parts, whether one sentence contradicts another. All of those need
+meaning, and a wrong claim about meaning is the failure this app exists to avoid.
+
+⚠️ **Two false positives were found by measuring, and both are now tests.** The check
+reported **`Tuesday` and `Thursday` as one name written two ways** — arithmetically true
+(the two words really are two edits apart) and completely wrong. Tightening the distance
+would have lost `Grimsby`/`Grimbsy`, so the fix is a closed list of the words where a small
+spelling gap is expected: weekdays, months, and ordinary words that are capitalised only
+because they start a sentence. The second: the pool builds short capitalised *phrases*, so a
+sentence opening produced the pair **`On Tuesday` / `On Thursday`**, because the stoplist was
+being checked against the whole phrase and never saw the weekday inside it. The browser suite
+now asserts the opposite direction too — **a well-formed document must produce no panel at
+all.**
+
+---
+
 ## Two answers that were wrong, and the mechanisms that stop them
 
 Both failures were found by pasting a real resume, and both are held down by tests that

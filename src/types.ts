@@ -176,6 +176,21 @@ export interface GapReport {
   once: { value: string; kind: string }[];
 }
 
+/**
+ * Where the document disagrees with itself, counted in code. See `conflicts.ts`.
+ *
+ * Lives here with the other shared shapes for the same reason `GapReport` does — so that
+ * `types.ts` does not import from a module that imports from it.
+ */
+export interface ConflictReport {
+  /** Entries whose date runs backwards against the entry before them. */
+  outOfOrder: { at: number; label: string; date: string; previousDate: string; previousLabel: string }[];
+  /** The same word written two different ways — a fact about spelling, not identity. */
+  spelledTwoWays: { a: string; b: string; kind: string }[];
+  /** Dates the parser refused to resolve, quoted as written. */
+  ambiguous: { label: string; raw: string }[];
+}
+
 export interface Answer {
   question: string;
   /** The model's reply as it came back, before it was read into shape. */
@@ -190,6 +205,10 @@ export interface Answer {
    * See `gaps.ts`. Shown beside the answer precisely because it is not the model's word.
    */
   gaps: GapReport;
+  /**
+   * Where the document disagrees with itself — also counted in code. See `conflicts.ts`.
+   */
+  conflicts: ConflictReport;
   details: AnswerDetails;
   /** Facts counted in code over the whole document. */
   computed: ComputedFact[];
