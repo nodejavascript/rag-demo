@@ -66,7 +66,11 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 0;
+  /* padding-BLOCK, not padding. These elements also carry `.wrap`, and writing
+     `padding: 12px 0` here silently wiped the 22px side inset — the whole page then
+     sat flush against the screen edge on a phone. Setting only the block axis cannot
+     clobber the axis it does not name. */
+  padding-block: 12px;
 }
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand svg { display: block; }
@@ -79,11 +83,15 @@ a:hover { text-decoration: underline; }
 }
 .top nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
 .top nav a { color: var(--ink-2); }
-@media (max-width: 620px) { .top nav { display: none; } }
+@media (max-width: 620px) {
+  .top nav { display: none; }
+  .wrap { padding-inline: 16px; }
+  .charts { grid-template-columns: 1fr; }
+}
 
 /* ---------- hero ---------- */
 
-.hero { padding: 58px 0 26px; }
+.hero { padding-block: 58px 26px; }
 .hero h1 {
   font-size: clamp(34px, 6vw, 58px);
   line-height: 1.04;
@@ -349,7 +357,7 @@ section.block p { color: var(--ink-2); max-width: 76ch; }
 footer {
   border-top: 1px solid var(--line);
   margin-top: 30px;
-  padding: 26px 0 46px;
+  padding-block: 26px 46px;
   color: var(--muted);
   font-size: 13.5px;
 }

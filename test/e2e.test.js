@@ -12,18 +12,42 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const PORT = 4733;
 const BASE = `http://127.0.0.1:${PORT}`;
 
+/**
+ * George's own resume, with the e-mail address and phone number redacted and nothing
+ * else touched. This is here rather than the short built-in sample because the failure
+ * it guards against was found on THIS document: the page was asked where he went to
+ * school and answered **University of Windsor**, a name that appears nowhere in it.
+ */
+const RESUME = readFileSync(new URL('../fixtures/george-resume.md', import.meta.url), 'utf8');
+
 let child = null;
 let browser = null;
 let page = null;
 let modelUp = false;
 let dir = null;
+
+async function paste(text) {
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.fill('#paste', text);
+  await page.waitForFunction(
+    (expected) => document.getElementById('paste').value.length === expected,
+    text.length
+  );
+}
+
+/** The built-in diary — dates, a place, a person, an amount and a picture. */
+async function diary() {
+  const response = await fetch(`${BASE}/api/samples/diary`);
+  const sample = await response.json();
+  return sample.text;
+}
 
 async function waitForServer(timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
@@ -83,10 +107,7 @@ test('the page loads, and says whether the model is up', async (t) => {
 
 test('a document can be pasted and indexed, and the charts draw', async (t) => {
   if (!page) return t.skip('no browser');
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => document.getElementById('use-diary').click());
-  await page.waitForFunction(() => document.getElementById('paste').value.length > 500);
-
+  await paste(await diary());
   const stat = await page.locator('#paste-stat').innerText();
   assert.match(stat, /characters/);
 
@@ -112,9 +133,7 @@ test('a question gets an answer with its details and sources', async (t) => {
   if (!page) return t.skip('no browser');
   if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
 
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => document.getElementById('use-diary').click());
-  await page.waitForFunction(() => document.getElementById('paste').value.length > 500);
+  await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
   await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
 
@@ -140,10 +159,9 @@ test('a question gets an answer with its details and sources', async (t) => {
 
 test('a question the document does not answer is refused on the page', async (t) => {
   if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
 
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => document.getElementById('use-diary').click());
-  await page.waitForFunction(() => document.getElementById('paste').value.length > 500);
+  await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
   await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
 
@@ -155,4 +173,45 @@ test('a question the document does not answer is refused on the page', async (t)
   assert.match(classes, /refused/, 'the refusal must be shown as a refusal');
   const prose = await page.locator('#answer-prose').innerText();
   assert.match(prose, /does not say/i);
+});
+
+/**
+ * 🔴 THE REGRESSION THIS FILE EXISTS FOR.
+ *
+ * George pasted his own resume and asked where he went to school. The page answered
+ * **"University of Windsor"**. The word *University* does not occur anywhere in the
+ * resume — it says **St. Clair College**, under `Windsor, Ontario`. Two separate faults
+ * produced that answer, and this test covers both at once:
+ *
+ *   1. the parser never split his sections, because his headings are fragments with no
+ *      full stop, so `EDUCATION` was glued onto the project above it and the school
+ *      line was indexed as part of a project note;
+ *   2. the model, shown `St. Clair College` and then a line reading `Windsor, Ontario`,
+ *      combined the two.
+ *
+ * It is asserted on the PAGE and not in a unit test because the unit tests were all
+ * green while the page gave the wrong answer.
+ */
+test('the school in the resume is the one the resume names', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+
+  assert.match(RESUME, /St\.?\s*Clair/i, 'the fixture must still name the college');
+  assert.doesNotMatch(RESUME, /University/i, 'and must still contain no such word');
+
+  await paste(RESUME);
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  await page.fill('#question', 'Where did he go to school?');
+  await page.evaluate(() => document.getElementById('ask').click());
+  await page.waitForFunction(() => !document.getElementById('answer-wrap').hidden, null, { timeout: 60000 });
+
+  const answer = await page.locator('#answer-prose').innerText();
+  assert.match(answer, /St\.?\s*Clair/i, `the answer must name the college the resume names, but it read: ${answer}`);
+  assert.doesNotMatch(
+    answer,
+    /University of Windsor/i,
+    `the answer must not invent a university the resume never mentions, but it read: ${answer}`
+  );
 });

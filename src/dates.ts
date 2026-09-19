@@ -174,6 +174,20 @@ export function findDates(text: string, yearHint: number | null = null): DateHit
     }
   }
 
+  // 09/2026 — a month and a year, which is how a resume writes a job. Not `09/20`,
+  // which is why the month-first pattern above refuses it: four digits after the slash
+  // cannot be a day.
+  //
+  // 🔴 THIS RUNS *AFTER* THE FULL NUMERIC DATE ABOVE, AND THAT ORDER IS THE WHOLE
+  // POINT. Offered the text earlier it matches `03/2026` inside `06/03/2026` — the last
+  // seven characters of a complete date — and claims them, so the ambiguous-date rule
+  // never sees the thing it was written to protect. Later is safe, because a standalone
+  // `09/2026` has only one slash and the rule above cannot match it at all. **Put this
+  // block back above that loop and two dates tests fail** — which is how this was found.
+  for (const m of text.matchAll(/\b(0?[1-9]|1[0-2])\/(\d{4})\b/g)) {
+    consider(m, build(m[0], m.index ?? 0, null, Number(m[1]), Number(m[2]), false, false));
+  }
+
   return hits.sort((a, b) => a.index - b.index);
 }
 

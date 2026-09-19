@@ -387,18 +387,6 @@ $('clear').addEventListener('click', () => {
   el.shape.hidden = true;
 });
 
-$('use-diary').addEventListener('click', () => void loadSample('diary'));
-$('use-resume').addEventListener('click', () => void loadSample('resume'));
-
-async function loadSample(id: string): Promise<void> {
-  const response = await fetch(`./api/samples/${id}`);
-  if (!response.ok) return;
-  const body = (await response.json()) as { text: string };
-  el.paste.value = body.text;
-  updatePasteStat();
-  el.paste.scrollIntoView({ block: 'center' });
-}
-
 /* ------------------------------------------------------------------ step 2 */
 
 function card(key: string, value: string, unit: string): string {

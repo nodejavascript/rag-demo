@@ -372,10 +372,13 @@ export class Store {
    * notes that share the others, and terms of four letters or more also match as a
    * prefix so a plural finds its singular.
    */
-  lexical(docId: string, question: string, limit: number): { chunkId: number; score: number }[] {
+  lexical(docId: string, question: string, limit: number, extraTerms: string[] = []): { chunkId: number; score: number }[] {
     const terms = [...question.toLowerCase().matchAll(/[\p{L}\p{N}'\u2019-]{2,}/gu)]
       .map((m) => m[0].replace(/['\u2019-]+$/, ''))
-      .filter((term) => term.length >= 2);
+      .filter((term) => term.length >= 2)
+      // Words the DOCUMENT may use where the QUESTION used another — see intent.ts. They
+      // are OR-ed in beside the question's own words, so this can only add candidates.
+      .concat(extraTerms.map((term) => term.toLowerCase()));
     if (terms.length === 0) return [];
 
     const seen = new Set<string>();

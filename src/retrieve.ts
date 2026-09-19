@@ -15,6 +15,8 @@
  */
 
 import { AppError, type Scored } from './types.js';
+import { expandQuery } from './intent.js';
+import { findDates } from './dates.js';
 import { Store, type StoredChunk } from './store.js';
 import type { Model } from './model.js';
 
@@ -52,8 +54,32 @@ export interface RetrieveResult {
   rerankMs: number;
 }
 
-/** Fuse two rankings by reciprocal rank. */
-function fuse(
+/**
+ * Put a note that IS the date the question asked about in front of the rest.
+ *
+ * 🔴 WHY THIS IS NEEDED, MEASURED. Asked **"What happened on 6 March 2026?"**, the note
+ * that is 6 March scored **0.536 and came LAST of the eight notes offered**, behind
+ * 2 April at **0.583**. That is not a bug in the embedding — the entries of a diary are
+ * written alike, so every one of them lands within about a tenth of every other, and the
+ * order among them is close to arbitrary. The model was handed the right note last and
+ * answered with the right event and no date at all.
+ *
+ * A date written in a question is the least ambiguous thing in the whole request, and the
+ * meaning search throws it away. So it is used here instead: a note whose own date equals
+ * a date in the question is lifted to the front.
+ *
+ * **This computes nothing and invents nothing.** It re-orders notes that were already
+ * found, which is exactly why it cannot make the model assert something the document does
+ * not say — the same safety argument as the query expansion in `intent.ts`.
+ */
+function byAskedDate(a: Scored, b: Scored, asked: Set<string>): number {
+  const aHit = a.chunk.date !== null && asked.has(a.chunk.date) ? 1 : 0;
+  const bHit = b.chunk.date !== null && asked.has(b.chunk.date) ? 1 : 0;
+  // Array.prototype.sort is stable, so notes that tie keep the ranking they were given.
+  return bHit - aHit;
+}
+
+/** Fuse two rankings by reciprocal rank. */function fuse(
   vectorRank: Map<number, number>,
   lexicalRank: Map<number, number>
 ): Map<number, { fused: number; both: boolean }> {
@@ -85,9 +111,21 @@ export async function retrieve(
   const [queryVector] = await model.embed([question]);
   if (!queryVector) throw new AppError('The embedding model returned nothing for the question.', 502);
 
-  const lexicalRows = store.lexical(docId, question, LIST_DEPTH);
+  // The question's own words, plus the words a document is likely to have used instead —
+  // "school" for EDUCATION, "now" for Present. Only the word search is widened: the
+  // embedding and the refusal floor above it stay exactly as calibrated.
+  const intentTerms = expandQuery(question);
+  // A date the question names outright. Only a complete date counts — "March 2026" or an
+  // ambiguous `06/03/2026` identifies no single day, so it lifts nothing.
+  const askedDates = new Set(
+    findDates(question)
+      .map((hit) => hit.date)
+      .filter((date): date is string => date !== null)
+  );  const lexicalRows = store.lexical(docId, question, LIST_DEPTH, intentTerms);
   if (lexicalRows.length === 0) {
     warnings.push('The keyword search found nothing — this answer rests on the meaning search alone.');
+  } else if (intentTerms.length > 0) {
+    warnings.push(`Searched for ${intentTerms.slice(0, 6).join(', ')} as well, because the document may use those words.`);
   }
 
   const vectorRows = store
@@ -165,7 +203,17 @@ export async function retrieve(
       fused: row.candidate.fused,
       both: row.candidate.both,
       rerank: row.rerank,
-    }));
+    }))
+    .sort((a, b) => byAskedDate(a, b, askedDates));
+
+  if (askedDates.size > 0) {
+    const lifted = scored.filter((note) => note.chunk.date && askedDates.has(note.chunk.date)).length;
+    if (lifted > 0) {
+      warnings.push(
+        `The question names a date, so ${lifted === 1 ? 'the note dated it' : `${lifted} notes dated it`} ${lifted === 1 ? 'was' : 'were'} put first.`
+      );
+    }
+  }
 
   return { question, scored, bestVector, silent: false, warnings, retrieveMs, rerankMs };
 }

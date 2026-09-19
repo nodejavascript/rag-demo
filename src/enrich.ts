@@ -101,17 +101,73 @@ const NOT_NAME_WORDS = new Set([
   'python','java','kotlin','golang','rust','docker','kubernetes','linux','windows','macos','html','css','sql',
   'aws','azure','gcp','redis','kafka','terraform','django','rails','laravel','spring','dotnet','swift',
   'github','gitlab','jira','figma','wordpress',
+  // 🔴 ORGANISATION AND PRODUCT WORDS.
+  //
+  // This half of the list is here because of a second real failure on the same resume
+  // that produced *University of Windsor*. With the sections finally splitting, the
+  // "people" list filled up with **44** entries and almost none of them were people:
+  // `Model Context Protocol`, `Google Workspace`, `RESTful API`, `Material UI`,
+  // `Apache Tika`, `British Columbia`, `North America`. Those are a technology, a
+  // product, a place and a continent.
+  //
+  // The rule that resolves it: **this list is for people.** Anything that reads as an
+  // organisation, a product or a technology is rejected outright, because a company
+  // keeps its own place and a place keeps its own. Being generous here costs a
+  // person's name only when it is also spelled like a company, which is rare; being
+  // mean costs nothing but a shorter list.
+  'protocol','api','apis','sdk','cli','ui','ux','client','server','service','services','suite',
+  'cloud','platform','platforms','systems','system','solutions','solution','technologies',
+  'technology','digital','labs','lab','global','media','networks','network','data','analytics',
+  'maps','workspace','studio','studios','agency','consulting','ventures','capital','foundation',
+  'america','europe','asia','africa','kingdom','states','republic','north','south','east','west',
+  'central','national','international','federal','ontario','quebec','alberta','columbia','canada',
+  // role words, because a bullet that starts a line is a job, not a person
+  'senior','junior','lead','staff','principal','chief','head','full','front','back','end','stack',
+  'level','grade','tier','model','context','design','analysis','management','operations','quality',
+  'service','customer','project','programme','program','product','business','software','hardware',
+  // The long tail, measured rather than imagined. After the rules above, this resume
+  // still reported ten things as people; every one of them is on this list. It is
+  // deliberately a plain list of words that are not names — a closed vocabulary is the
+  // honest way to do this without a model, and the cost of a word being here is only
+  // that somebody must share a name with it.
+  'compose','databases','database','languages','language','centers','center','centre','ai','ml','jwt','git',
+  'tika','apache','agentic','agent','agents','workflows','workflow','orchestration','telemetry','reporting',
+  'warehousing','normalization','migrations','seeding','caching','monitoring','logging','alerting','hardening',
+  'reverse','proxy','architecture','pipelines','pipeline','webhooks','websockets','socketio','present','fort',
+  'vs','code','visual','studio','docker','cordova','ionic','expo','meteor','hapi','joi','redux','storybook',
+  'bootstrap','material','ant','angular','asp','php','coldfusion','vue','svelte','express','mongo','postgres',
+  'sqlite','qdrant','meilisearch','opentelemetry','prometheus','grafana','loki','rabbitmq','mqtt','nginx',
+  'traefik','caddy','cloudflare','stripe','paypal','cloudinary','digitalocean','vercel','netlify','supabase',
+  'laser','eye','fitness','health','ventures','holdings','vision','visions','remote','hybrid','onsite',
+  // verbs that open a bullet, which the punctuation rule cannot catch when the bullet is
+  // written as a bare word rather than a dash
+  'used','implemented','queried','created','built','worked','led','managed','developed','designed','wrote',
+  'delivered','gathered','accelerated','maintained','authored','directed','shipping','owned','own','ran',
   // calendar words, which are not names and not places
   'monday','tuesday','wednesday','thursday','friday','saturday','sunday','january','february','march','april',
   'may','june','july','august','september','october','november','december',
 ]);
 
-/** True when any word of a phrase rules it out as a person. */
-function disqualified(phrase: string): boolean {
+/**
+ * True when a phrase contains a word that rules it out as a NAME.
+ *
+ * 🔴 This is separate from the place test below on purpose, and sharing one function
+ * between them was a real bug for about ten minutes: the whole-phrase gazetteer check
+ * is right for people (`British Columbia` is not a person) and is exactly backwards for
+ * places, where a gazetteer hit is the BEST possible evidence. Sharing it made
+ * `Port Dover` stop being a place.
+ */
+function hasNonNameWord(phrase: string): boolean {
   return phrase
     .split(/[\s.]+/)
     .filter(Boolean)
     .some((word) => NOT_NAME_WORDS.has(word.toLowerCase()));
+}
+
+/** A phrase that is not a person: a technology, an organisation, or a known place. */
+function disqualifiedFromBeingAPerson(phrase: string): boolean {
+  if (GAZETTEER.has(phrase.trim().toLowerCase())) return true;
+  return hasNonNameWord(phrase);
 }
 
 /** Words that begin a sentence often enough to be mistaken for a first name. */
@@ -168,7 +224,10 @@ export function findPlaces(text: string): string[] {
     if (phrase.length < 3) continue;
     const head = phrase.split(/\s+/)[0] ?? '';
     if (NOT_NAMES.has(head.toLowerCase())) continue;
-    if (disqualified(phrase)) continue;
+    // For a PLACE the reject-list is only the technology and organisation words. The
+    // gazetteer test must not be applied here — `Port Dover` is in it, and that is the
+    // best evidence there is that something is a place.
+    if (hasNonNameWord(phrase)) continue;
     const words = phrase.split(/\s+/).length;
     if (words === 1 && !GAZETTEER.has(phrase.toLowerCase())) continue;
     found.push(phrase);
@@ -212,7 +271,7 @@ export function findPeople(text: string): string[] {
     const lower = first.toLowerCase();
     if (NOT_NAMES.has(lower) || GAZETTEER.has(lower)) continue;
     if (first.length > 1 && first === first.toUpperCase()) continue;
-    if (disqualified(phrase)) continue;
+    if (disqualifiedFromBeingAPerson(phrase)) continue;
     found.push(phrase);
   }
 
@@ -244,9 +303,15 @@ export function findPeople(text: string): string[] {
     // that follows a full stop is still a space, and counting it was how a resume
     // produced *Built* as a person — every occurrence of the word began a sentence
     // that followed another one.
+    //
+    // 🔴 And neither is a space that follows a BULLET. A resume's whole body is bullet
+    // points, so `- Built the asset pipeline` put a verb after a space, the character
+    // before that space being `-`. That made every bullet-opening verb look
+    // mid-sentence, and the same resume produced *Built*(7), *Created*, *Worked*,
+    // *Led*, *Managed*, *Developed*, *Designed*, *Used*, *Implemented*, *Queried*.
     if (before === ' ') {
       const previous = text.slice(0, at).replace(/\s+$/, '').slice(-1);
-      if (previous && !/[.!?]/.test(previous)) entry.midSentence += 1;
+      if (previous && !/[.!?\-\u2013\u2014*\u2022\u00b7>|("']/.test(previous)) entry.midSentence += 1;
     }
     lone.set(word, entry);
   }

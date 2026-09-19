@@ -138,16 +138,72 @@ nothing.
 The container publishes on **loopback only**; the Caddy on the host is what serves it.
 
 ```bash
-docker compose up -d --build     # 127.0.0.1:4500
+npm run build
+docker build -t rag:latest .
+docker save rag:latest | gzip -1 | ssh dvs-sites 'gunzip | docker load'
+ssh dvs-sites 'cd /opt/rag && docker compose up -d'
 ```
 
-The memory limit in `docker-compose.yml` (384 MB) is not decoration: that host runs
+🔴 **The deploy is not finished until a model key is at `/opt/rag/secrets/model_key`.**
+The file is mounted as `MODEL_API_KEY_FILE` and **the service starts happily without it**
+— `/` returns 200 and `/healthz` returns an honest **503** naming the reason. That is
+intended: a page that loads and says *"the model is not reachable"* is better than a page
+that fails, and much better than one that pretends.
+
+**The key is created in the DigitalOcean console, and nowhere else.** There is no public
+API route for it — `GET /v2/gen-ai/model_access_keys` answers `404 not_found`, so it
+cannot be minted from this machine. George creates the Model Access Key himself and saves
+it to that file; **it is never pasted into a chat and never committed.** Model *names*
+(`openai-gpt-oss-20b`, `llama3.3-70b-instruct`, …) **are** readable from the API, so the
+account does have the models — only the key is missing.
+
+The memory limit in `docker-compose.yml` (288 MB) is not decoration: that host runs
 nine other sites and a Postgres in 1 GB of RAM. An unbounded Node process plus a large
 paste would take the whole machine down, and the blast radius would be every site, not
 this one.
 
 The document text and the questions are **never written to the log** — only sizes,
 counts and timings. A privacy promise the log contradicts is not a promise.
+
+---
+
+## Two answers that were wrong, and the mechanisms that stop them
+
+Both failures were found by pasting a real resume, and both are held down by tests that
+name the document they failed on.
+
+**1 · Asked where he went to school, it said "University of Windsor".** The word
+*University* is not in the resume. Two faults stacked: his headings are fragments with no
+full stop, so the parser never split his sections and `EDUCATION` was glued onto the
+project above it; and the model, shown `St. Clair College` with `Windsor, Ontario` on the
+line beneath, joined the two. Fixed by `isSectionName`/`isBodyOf` in `text.ts` — the
+resume now parses to 19 entries instead of 1 — and by **rule 12**, which forbids
+substituting a more familiar name for the one written.
+
+**2 · The same question then returned an honest refusal, and "who does he work for now"
+named an employer whose contract had ended.** One cause: the note holding the answer was
+never offered to the model. A resume heads that subject **EDUCATION**, so a question
+asking about "school" shared no content word with the document; and "now" appears in no
+resume at all, where the document writes **Present**.
+
+Three mechanisms, all of them in `src/intent.ts`, `src/retrieve.ts` and `src/prompt.ts`:
+
+| Mechanism | What it does | Why it cannot invent anything |
+|---|---|---|
+| **Query expansion** (`intent.ts`) | adds the words a document is likely to have used — school → EDUCATION, now → Present | it widens **only the word search**; the embedding and the refusal floor above it are untouched, because the floor is a measurement of meaning and moving it would make it a lie |
+| **Asked-date lift** (`retrieve.ts`) | a note whose own date equals a date in the question goes first | it re-orders notes that were already found |
+| **The date reminder** (`prompt.ts`) | repeats the date requirement directly under the question | it echoes **the date in the question**, not a date from outside |
+
+**Every one of them can only offer the model one more note to read. None can add a
+sentence to the answer.** That is the whole safety argument, and `test/intent.test.js`
+asserts the negative cases too — a question the list knows nothing about is left exactly
+alone, and an ambiguous `06/03/2026` never becomes an instruction to open with a date
+nobody can resolve.
+
+**The date reminder exists because the other two were not enough.** With the correct note
+moved to the front *and* a rule already requiring the date, `qwen2.5:7b` answered the
+6 March question without ever writing "6 March" — three runs out of three. A rule in a
+list of twelve is read; a sentence directly under the question is obeyed.
 
 ---
 

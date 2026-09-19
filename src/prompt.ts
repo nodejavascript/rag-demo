@@ -22,6 +22,7 @@
 import type { ChatMessage } from './model.js';
 import type { ComputedFact, IndexStats } from './types.js';
 import { factsAsText } from './stats.js';
+import { findDates } from './dates.js';
 
 /** The exact words a refusal uses, so the page can recognise one. */
 export const REFUSAL = "The document doesn't say.";
@@ -73,7 +74,11 @@ THE RULES
 
 10. When the answer turns on a period, NAME THE PERIOD IN WORDS. Write "in April", not only "[2026-04-04]". A citation is not an answer. **If the question itself names a date or a period, write that date in your first sentence** — an answer to "what happened on 6 March 2026" that never says "6 March 2026" cannot be checked against the document at a glance, which is the whole point of answering this way.
 
-11. Where a note carries a place or a date, put it in the sentence. "On 6 March, in Hamilton, the boiler failed" is the answer; "the boiler failed" is only part of it.`;
+11. Where a note carries a place or a date, put it in the sentence. "On 6 March, in Hamilton, the boiler failed" is the answer; "the boiler failed" is only part of it.
+
+12. 🔴 COPY A PROPER NAME EXACTLY AS IT IS WRITTEN. A school, a company, a person, a place and a product keep the words the document uses — every word of them. Do NOT substitute a more familiar one, do NOT correct one you believe is wrong, do NOT join a name on one line to a place on the line beneath it, and do NOT turn a college into a university.
+
+    This is a real failure and not a caution. A resume wrote St. Clair College on one line and Windsor, Ontario, Canada on the next, and the answer came back as University of Windsor — a school the document never mentions, put in the place of the one it names. If the document names an institution you have never heard of, that IS the answer. If the question asks for something the document does not name, refuse.`;
 
 export interface BuildPromptInput {
   question: string;
@@ -116,6 +121,26 @@ export function buildMessages(input: BuildPromptInput): ChatMessage[] {
     })
     .join('\n\n');
 
+  // 🔴 THE LAST WORD GOES TO THE ONE FORMATTING RULE A SMALL MODEL KEEPS MISSING.
+  //
+  // Asked *"What happened on 6 March 2026?"*, qwen2.5:7b returned the right event and
+  // never wrote the date — three runs out of three — even with the correct note moved to
+  // the front and rule 10 already saying exactly this in the list above. A rule in a list
+  // of twelve is read; a sentence directly under the question is obeyed. The date is not
+  // being supplied from outside: it is the date **in the question**, written back.
+  // ⚠️ Only a date the document can actually be checked against counts. `06/03/2026` can
+  // be read as two different days, so telling the model to open with "the date it asks
+  // about" would have it assert a day nobody can resolve — the exact thing rule 5 forbids.
+  // A month and a year DO count: `09/2026` names one period and one period only.
+  const asked = findDates(input.question)
+    .filter((hit) => !hit.ambiguous && (hit.date !== null || hit.monthOnly))
+    .map((hit) => hit.raw)
+    .filter((raw, at, all) => all.indexOf(raw) === at);
+  const reminder =
+    asked.length > 0
+      ? `\n\nBegin your answer with the date this question asks about, written as the document writes it (${asked.join(', ')}), then answer.`
+      : '';
+
   const user = `THE FACTS, COUNTED BY THE PROGRAM OVER THE WHOLE DOCUMENT. These are correct and final; never recount them.
 
 ${factsAsText(input.facts)}
@@ -126,7 +151,7 @@ ${notes}
 
 THE QUESTION
 
-${input.question}`;
+${input.question}${reminder}`;
 
   return [
     { role: 'system', content: SYSTEM_PROMPT },

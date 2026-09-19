@@ -52,7 +52,7 @@ export interface IndexResult {
  * nothing in the code looks wrong. **Bump this whenever the chunker, the date parser,
  * the enrichment or the stored schema changes.**
  */
-export const PIPELINE_VERSION = 4;
+export const PIPELINE_VERSION = 5;
 
 export function fingerprintOf(text: string, embedModel: string): string {
   return createHash('sha256').update(`${PIPELINE_VERSION}\u0000${embedModel}\u0000${text}`).digest('hex');

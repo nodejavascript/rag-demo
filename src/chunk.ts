@@ -17,7 +17,7 @@
 
 import { dominantYear, entryDate, entryMonth, findDates } from './dates.js';
 import { findAmounts, findPeople, findPlaces, imagesByEntry, tally } from './enrich.js';
-import { blocks, cleanHeading, containsProse, endsInPunctuation, lines, looksLikeHeadingCandidate } from './text.js';
+import { blocks, cleanHeading, endsInPunctuation, isBodyOf, isSectionName, lines, looksLikeHeadingCandidate } from './text.js';
 import type { Chunk, Entry, ImageRef, IndexStats, Mention, NoteMeta } from './types.js';
 
 /** Words per note, and how much of the tail is repeated into the next one. */
@@ -144,23 +144,29 @@ export function build(text: string, yearHint: number | null, imagesIn: ImageRef[
     // Three ways a block announces a new entry.
     //
     //  1. A heading with its body in the same paragraph — the ordinary case, judged by
-    //     the line beneath ending in a full stop.
-    //  2. A heading ALONE in its own paragraph, with prose in the next one. This is the
+    //     the line beneath ending in a full stop, holding a date, or naming a section.
+    //  2. A heading ALONE in its own paragraph, with a body in the next one. This is the
     //     shape almost every real document uses:
     //         EXPERIENCE
     //         <blank>
     //         Senior Software Engineer, …
-    //     and missing it collapsed an entire resume into a single entry. A fragment
-    //     list fails this test because its next block holds no sentence at all.
+    //     and missing it collapsed an entire resume into a single entry.
     //  3. A title line followed by a date line — how a resume writes a job, and how a
     //     list of fragments never reads.
+    //
+    // `isBodyOf` is the guard that keeps a document of short standalone lines whole —
+    // see the note on it in text.ts, and the failure on George's own resume that made
+    // it necessary.
+    const nextBlock = blockList[position + 1] as { text: string } | undefined;
     const startsEntry =
       blockLines.length > 1
         ? looksLikeHeadingCandidate(first) &&
-          (endsInPunctuation(body) || (body !== null && findDates(body, null).length > 0))
+          (endsInPunctuation(body) ||
+            isSectionName(first) ||
+            (body !== null && findDates(body, null).length > 0))
         : looksLikeHeadingCandidate(first) &&
-          blockList[position + 1] !== undefined &&
-          containsProse((blockList[position + 1] as { text: string }).text);
+          nextBlock !== undefined &&
+          isBodyOf(nextBlock.text, first);
 
     if (startsEntry) {
       if (current) rawEntries.push(finish(current));

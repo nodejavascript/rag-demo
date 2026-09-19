@@ -264,6 +264,92 @@ export function containsProse(text: string): boolean {
   return /[.!?](\s|$)/.test(text);
 }
 
+/** How many lines of a block hold anything at all. */
+export function nonBlankLineCount(text: string): number {
+  return text.split('\n').filter((line) => line.trim().length > 0).length;
+}
+
+/**
+ * Words that name a SECTION of a document rather than say anything.
+ *
+ * 🔴 This list exists because of a real failure on George's own resume. His sections
+ * are written the way every resume writes them — the heading, then the facts as
+ * fragments with no full stops:
+ *
+ *     EDUCATION
+ *
+ *     St. Clair College
+ *     Windsor, Ontario, Canada
+ *     Chemical Engineering Technology (3-year program)
+ *     1993
+ *
+ * The rule at the time required the line beneath the blank to end a SENTENCE, which
+ * no line here does, so `EDUCATION` was not treated as a heading. It was glued onto
+ * the entry before it — the last project — and the college ended up buried in an entry
+ * labelled with a project's name. Asked where he went to school, the tool could not
+ * find the note and the model, seeing `St. Clair College` above `Windsor, Ontario`,
+ * answered *University of Windsor*. **Wrong, confident and invented** — the worst kind
+ * of failure this tool can have.
+ *
+ * A section name is a small, closed set of words, and knowing them costs nothing. The
+ * alternative — guessing from shape alone — is exactly what produced the fragment bug
+ * this file already guards against, because a heading and a loose list item look
+ * identical.
+ */
+const SECTION_WORDS = new Set([
+  // a resume
+  'summary','profile','objective','overview','introduction','background','about','experience',
+  'employment','work','history','projects','project','skills','technologies','tools',
+  'education','training','certifications','certification','courses','qualifications','achievements',
+  'awards','publications','languages','interests','volunteer','references','contact','portfolio',
+  // a policy, a set of terms, a contract
+  'scope','purpose','definitions','definition','eligibility','requirements','requirement','policy',
+  'policies','procedure','procedures','fees','fee','payment','payments','refunds','refund',
+  'cancellation','termination','liability','warranty','privacy','security','compliance',
+  'confidentiality','governing','jurisdiction','severability','amendments','notices','effective',
+  'term','terms','conditions','responsibilities','penalties','disclaimer','agreement','parties',
+  'schedule','appendix','exhibit','annex','glossary','index','notes','faq','enquiries','enquiries',
+]);
+
+/**
+ * True when a line names a section.
+ *
+ * Deliberately narrow. Either the phrase is one or two words with a section word in it
+ * (`PROFESSIONAL EXPERIENCE`, `Core Stack`) or it OPENS with one (`SUMMARY OF TERMS`).
+ * Anything longer is prose that happens to contain the word — `Work model: Hybrid` is
+ * three words and is not a heading, which matters because it sits inside a job block.
+ */
+export function isSectionName(line: string): boolean {
+  // A heading names a section. A line with a colon in the middle is a LABELLED VALUE —
+  // `Work model: Hybrid` — and treating one as a heading split a job block in two.
+  if (line.includes(':')) return false;
+  const words = line
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0 || words.length > 4) return false;
+  if (SECTION_WORDS.has(words[0] as string)) return true;
+  return words.length <= 2 && words.some((word) => SECTION_WORDS.has(word));
+}
+
+/**
+ * Whether what follows a heading is its BODY rather than another loose line.
+ *
+ * Three signals, and each one earned its place:
+ *  - it holds a sentence, which is the original rule;
+ *  - it holds more than one line, which is what a resume's block of facts looks like;
+ *  - the heading is a known section name, which lets `SKILLS` be followed by a single
+ *    long line of fragments.
+ *
+ * A document of short standalone lines still fails all three — each line is one line,
+ * holds no sentence, and is not a section name — so the fragment guard is intact.
+ */
+export function isBodyOf(text: string, heading: string): boolean {
+  return containsProse(text) || nonBlankLineCount(text) >= 2 || isSectionName(heading);
+}
+
 /**
  * A heading, judged by the line beneath it.
  *

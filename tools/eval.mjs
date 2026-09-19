@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ten known questions with known answers, scored.
+ * Known questions with known answers, scored.
  *
  * `npm test` proves the machinery works; this proves the ANSWERS are right, which is a
  * different claim. Each case asserts something specific and checkable — a date that
@@ -8,8 +8,16 @@
  * must be refused — so a regression in the prompt or the retrieval shows up as a
  * number rather than as a feeling that the answers got worse.
  *
+ * Most cases run over the built-in diary. The last two run over **George's own
+ * resume**, because the worst answer this app has ever given was given about it: asked
+ * where he went to school, it said *University of Windsor*, a name that is not in the
+ * document. A diary cannot catch that class of fault — the fault needs a document whose
+ * sections are fragments and whose places sit next to institutions.
+ *
  * Needs a live model. `npm run eval`.
  */
+
+import { readFileSync } from 'node:fs';
 
 import { build } from '../dist/chunk.js';
 import { answer } from '../dist/answer.js';
@@ -82,7 +90,26 @@ const CASES = [
     mustNot: [/3|three|4|four/i],
     why: 'the count must come from code over the whole document, never from the model',
   },
+  {
+    doc: 'resume',
+    question: 'Where did he go to school?',
+    must: [/St\.?\s*Clair/i],
+    mustNot: [/University/i],
+    why: 'the resume names St. Clair College and contains no such word as University — this is the answer that was wrong',
+  },
+  {
+    doc: 'resume',
+    question: 'Who does he work for now?',
+    must: [/Data Vision Studios/i],
+    mustNot: [],
+    why: 'the present role must outrank a twenty-year history, so the timeline has to be read',
+  },
 ];
+
+/** The resume fixture, redacted only of an e-mail address and a phone number. */
+function resumeText() {
+  return readFileSync(new URL('../fixtures/george-resume.md', import.meta.url), 'utf8');
+}
 
 async function main() {
   const config = modelConfig();
@@ -97,14 +124,26 @@ async function main() {
   }
 
   const store = new Store(process.env.EVAL_DB ?? ':memory:');
-  const diary = SAMPLES.find((sample) => sample.id === 'diary').text;
-  const { document } = await indexDocument(store, model, { text: diary, title: 'A diary' });
-  console.log(`indexed ${document.stats.entries} entries in ${document.stats.embeddingMs} ms\n`);
+
+  // One index per document, built the first time a case asks for it.
+  const indexed = new Map();
+  async function documentFor(id) {
+    const already = indexed.get(id);
+    if (already) return already;
+    const text = id === 'resume' ? resumeText() : (SAMPLES.find((sample) => sample.id === id)?.text ?? '');
+    const { document } = await indexDocument(store, model, { text, title: id });
+    console.log(`indexed ${id}: ${document.stats.entries} entries in ${document.stats.embeddingMs} ms`);
+    indexed.set(id, document);
+    return document;
+  }
+  await documentFor('diary');
+  console.log('');
 
   let passed = 0;
   const started = Date.now();
 
   for (const [at, testCase] of CASES.entries()) {
+    const document = await documentFor(testCase.doc ?? 'diary');
     const result = await answer(store, model, document.id, testCase.question);
     const text = result.mode === 'refused' ? '' : result.prose;
     const problems = [];
@@ -123,7 +162,7 @@ async function main() {
 
     const ok = problems.length === 0;
     if (ok) passed += 1;
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${String(at + 1).padStart(2)}. ${testCase.question}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'} ${String(at + 1).padStart(2)}. [${testCase.doc ?? 'diary'}] ${testCase.question}`);
     if (!ok) {
       console.log(`      ${problems.join('; ')}`);
       console.log(`      why it matters: ${testCase.why}`);
