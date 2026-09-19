@@ -58,6 +58,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 🔴 THE ABSTRACT — the extra touch the apex had and the rest of the family did not.
+   Measured in a real browser on 19 Sep 2026: this site painted two gradients and no geometry,
+   and so did eight others, while nodejavascript.com painted a masked grid. George, verbatim:
+   *"the rest of the sites have lovely theme colors and gradients, but maybe missing the extra
+   touch of a background abstract."*
+
+   This site's geometry is a DOT MATRIX, in the site's own teal — a shape no other site in the
+   family draws, and the one that suits a page about finding things inside a document. It is its
+   own fixed layer rather than another entry in body's gradient stack for one reason: a pattern
+   has to FADE, and nothing fades a background image except a mask. A mask on `body` would fade
+   the page's own background with it; masked here, the matrix dissolves before the fold, so
+   there is no edge to see — which is the half of part 5d that matters. */
+.dvs-pattern {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(20, 184, 166, 0.16) 1px, rgba(0, 0, 0, 0) 1.6px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(120% 80% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 80%);
+  mask-image: radial-gradient(120% 80% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 80%);
+}
+
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
