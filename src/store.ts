@@ -364,6 +364,31 @@ export class Store {
   }
 
   /**
+   * The words a question is searched by.
+   *
+   * Split out from `lexical` so the rule can be tested directly rather than inferred
+   * from a search result — the fault this encodes was invisible in the results, because
+   * the entry was always *found*; it was just ranked eighth.
+   *
+   * 🔴 A SINGLE DIGIT IS KEPT, AND THAT IS NOT A DETAIL — IT WAS A REAL FAULT.
+   * The extractor used to require two characters, which threw away the day of the
+   * month. "What happened on 6 March 2026?" became "what happened on march 2026" —
+   * and **every** entry in a diary matches `march` and `2026`, so the question's whole
+   * distinguishing token was gone and ranking collapsed to whichever note happened to
+   * use the most ordinary words. Measured 2026-09-19: the 6 March entry ranked **8th of
+   * 9**, so retrieval handed the model the 4 March note and the demo answered a question
+   * about the sixth with the fourth's contents — which the eval caught, and which no
+   * amount of care in the model layer could have fixed.
+   *
+   * A lone LETTER is still dropped, because that is noise. A lone digit is the point.
+   */
+  termsFor(question: string): string[] {
+    return [...question.toLowerCase().matchAll(/[\p{L}\p{N}'\u2019-]+/gu)]
+      .map((m) => m[0].replace(/['\u2019-]+$/, ''))
+      .filter((term) => term.length >= 2 || /\d/.test(term));
+  }
+
+  /**
    * The lexical half of the search: SQLite's own BM25.
    *
    * Every term is quoted, because a question is typed text and FTS5's query language
@@ -373,9 +398,8 @@ export class Store {
    * prefix so a plural finds its singular.
    */
   lexical(docId: string, question: string, limit: number, extraTerms: string[] = []): { chunkId: number; score: number }[] {
-    const terms = [...question.toLowerCase().matchAll(/[\p{L}\p{N}'\u2019-]{2,}/gu)]
-      .map((m) => m[0].replace(/['\u2019-]+$/, ''))
-      .filter((term) => term.length >= 2)
+    const terms = this
+      .termsFor(question)
       // Words the DOCUMENT may use where the QUESTION used another — see intent.ts. They
       // are OR-ed in beside the question's own words, so this can only add candidates.
       .concat(extraTerms.map((term) => term.toLowerCase()));

@@ -86,7 +86,13 @@ const CASES = [
   },
   {
     question: 'How many times is the boiler mentioned?',
-    must: [/2|two/i],
+    // 🔴 `/twice/` IS NOT A LOOSENING — IT IS A FALSE FAILURE REPAIRED. The model answered
+    // "The boiler is mentioned twice.", which is exactly right, and the check called it a
+    // failure because "twice" contains neither "2" nor "two". The `mustNot` list already
+    // excludes 3 and 4, so the intent was never in doubt: **the answer must be two.** A
+    // check that cannot see a correct answer is worse than no check, because it teaches
+    // the reader to ignore the score. Found 2026-09-19 against Workers AI.
+    must: [/twice|\b2\b|\btwo\b/i],
     mustNot: [/3|three|4|four/i],
     why: 'the count must come from code over the whole document, never from the model',
   },

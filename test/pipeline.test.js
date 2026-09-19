@@ -309,6 +309,49 @@ test('the keyword half finds an exact word, and fusion keeps it', async () => {
   }
 });
 
+test('a question naming a day of the month finds THAT day, not a neighbour', async () => {
+  // 🔴 THE FAULT THIS HOLDS SHUT. The term extractor required two characters, so
+  // "What happened on 6 March 2026?" became "what happened on march 2026" — and every
+  // entry in a diary matches `march` and `2026`, so the one token that identified the
+  // entry was thrown away. Measured on the real index 2026-09-19: the 6 March entry
+  // ranked **8th of 9**, retrieval handed the model the 4 March note, and the demo
+  // answered a question about the sixth with the fourth's contents.
+  //
+  // Asserting on RANK (not merely "some result came back") is the point: the entry was
+  // always in the results. It was just never near the top, so the answer was wrong
+  // while every other signal looked healthy.
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    const { document } = await indexDocument(store, model, { text: diary });
+    const ranked = store.lexical(document.id, 'What happened on 6 March 2026?', 20);
+    assert.ok(ranked.length > 1, 'the diary must return more than one entry, or the test proves nothing');
+
+    const sixth = store.allChunks(document.id).find((chunk) => chunk.date === '2026-03-06');
+    assert.ok(sixth, 'the sample diary must have a 6 March entry for this test to mean anything');
+    assert.equal(
+      String(ranked[0].chunkId),
+      String(sixth.id),
+      'the day named in the question must rank first — otherwise the answer comes from the wrong day'
+    );
+  } finally {
+    close();
+  }
+});
+
+test('a lone letter is still dropped, and a lone digit is still kept', () => {
+  // Both halves of the rule, because the fix was a loosening and the guard against
+  // loosening too far is the reason the original filter existed. A single letter is
+  // noise; a single digit is a day of the month.
+  const { store, close } = scratch();
+  try {
+    assert.deepEqual(store.termsFor('a 6 b'), ['6'], 'one digit survives, one letter does not');
+    assert.deepEqual(store.termsFor('x and 27 y'), ['and', '27'], 'words and two-digit days both survive');
+  } finally {
+    close();
+  }
+});
+
 test('a question the document says nothing about is refused WITHOUT the model', async () => {
   const { store, close } = scratch();
   try {

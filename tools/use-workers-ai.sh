@@ -2,12 +2,15 @@
 #
 # Point rag-demo at Cloudflare Workers AI.
 #
-# WHY THIS SCRIPT EXISTS. The deployed demo needs a model credential, and every
-# credential this machine already holds is refused by Workers AI — the DNS-scoped token
-# answers 403, and the wrangler session answers 403 because its own scope list is missing
-# `ai:write`. So the credential has to be created once, by hand, in the Cloudflare
-# dashboard. **Everything either side of that one action is here**, so that when George
-# has the token it is a single command rather than a sequence of them.
+# WHY THIS SCRIPT EXISTS. The deployed demo needs a model credential, and no credential
+# this machine holds for the long term is accepted by Workers AI: the DNS-scoped token
+# answers 403, and the wrangler OAuth session — although it **can** now reach inference
+# (measured 2026-09-19, after a full `wrangler login --device` brought in the `ai` scope) —
+# is wrangler's own short-lived token and must never be put on a droplet. Token management
+# is refused outright (`9109`, HTTP 403, on all three endpoints) even with all 29 scopes,
+# so **nothing on this machine can mint the credential.** It has to be created once, by
+# hand, in the Cloudflare dashboard. **Everything either side of that one action is here**,
+# so that when George has the token it is a single command rather than a sequence of them.
 #
 # It does NOT create the token, and it never prints the secret. The token goes from a file
 # on this machine to a file on the droplet over ssh, and appears in no log, no command
@@ -34,7 +37,18 @@ SITE="https://rag-demo.nodejavascript.com"
 # An 8B-class model on purpose. The Worker AI free allowance is measured in neurons and a
 # 70B model spends them many times faster, so the default is the one that keeps the demo
 # free for the longest. Both are overridable for a one-off test.
-CHAT_MODEL="${CHAT_MODEL:-@cf/meta/llama-3.1-8b-instruct}"
+#
+# 🔴 `-fp8` IS NOT DECORATION. The plain `@cf/meta/llama-3.1-8b-instruct` was DEPRECATED on
+# 2026-05-30 and now answers **HTTP 410** with "Model has been deprecated" — this default
+# would have failed on the first question. The `-fp8` build is the live one. Measured
+# 2026-09-19 with a real call: HTTP 200, content `'Go'`.
+#
+# 🔴 AND DO NOT SWAP IN A REASONING MODEL WITHOUT CHECKING THE RESPONSE SHAPE. Both
+# `@cf/openai/gpt-oss-20b` and `@cf/zai-org/glm-4.7-flash` answer HTTP 200 but return
+# **`message.content: null`**, putting their output in `reasoning_content` instead — the
+# demo reads `message.content`, so either one would produce empty answers that look like
+# a broken model. The catalog's "Text Generation" list mixes the two families together.
+CHAT_MODEL="${CHAT_MODEL:-@cf/meta/llama-3.1-8b-instruct-fp8}"
 EMBED_MODEL="${EMBED_MODEL:-@cf/baai/bge-m3}"
 
 CHECK_ONLY=0
