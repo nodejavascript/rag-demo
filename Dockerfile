@@ -19,6 +19,11 @@
 FROM node:24-slim AS build
 WORKDIR /app
 
+# Playwright is a TEST-only dependency and its browser download is ~130 MB. It has no
+# business in an image that never runs a browser, and on a small builder it is the
+# difference between a build that finishes and one that is killed.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 COPY package.json package-lock.json* ./
 RUN npm install --no-audit --no-fund
 

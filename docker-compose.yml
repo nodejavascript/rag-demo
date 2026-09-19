@@ -26,36 +26,42 @@ services:
       HOST: "0.0.0.0"
       DB_PATH: "/data/rag.db"
       # How long an anonymous paste is kept before the sweeper removes it.
-      DOC_TTL_HOURS: "24"
+      DOC_TTL_HOURS: "${DOC_TTL_HOURS:-24}"
       # Hard ceiling on a paste, in characters. Beyond this the index is slow to
       # search and crowds the memory the other sites on this host need.
-      MAX_DOCUMENT_CHARS: "400000"
+      MAX_DOCUMENT_CHARS: "${MAX_DOCUMENT_CHARS:-400000}"
       # Two pastes may be embedded at once; the rest wait rather than thrash.
-      MAX_CONCURRENT_INDEX: "2"
-      INDEX_PER_HOUR: "40"
-      ASK_PER_HOUR: "240"
+      MAX_CONCURRENT_INDEX: "${MAX_CONCURRENT_INDEX:-2}"
+      INDEX_PER_HOUR: "${INDEX_PER_HOUR:-40}"
+      ASK_PER_HOUR: "${ASK_PER_HOUR:-240}"
       # --- the model -------------------------------------------------------
       # `ollama`   → a model on the same machine. No key, no vendor.
       # `openai`   → anything speaking the OpenAI shape, including DigitalOcean
       #              Gradient AI (https://inference.do-ai.run/v1).
-      MODEL_PROVIDER: "ollama"
-      MODEL_BASE_URL: "http://host.docker.internal:11434"
-      CHAT_MODEL: "qwen2.5:7b"
-      EMBED_MODEL: "nomic-embed-text"
+      #
+      # ⚠ The key is read from a FILE, never from this file and never from git.
+      # On the droplet it lives beside this compose file and is mounted below.
+      MODEL_PROVIDER: "${MODEL_PROVIDER:-ollama}"
+      MODEL_BASE_URL: "${MODEL_BASE_URL:-http://host.docker.internal:11434}"
+      MODEL_API_KEY_FILE: "${MODEL_API_KEY_FILE:-/run/secrets/model_key}"
+      CHAT_MODEL: "${CHAT_MODEL:-qwen2.5:7b}"
+      EMBED_MODEL: "${EMBED_MODEL:-nomic-embed-text}"
       # A cross-encoder is a real quality win when the provider has one. Measured
       # per embedding model — never carry a floor over from another one.
-      RERANK_MODEL: ""
-      REFUSAL_FLOOR: "0.56"
+      RERANK_MODEL: "${RERANK_MODEL:-}"
+      REFUSAL_FLOOR: "${REFUSAL_FLOOR:-0.56}"
     extra_hosts:
       # So the container can reach an Ollama running on the host, if that is how the
       # models are served. Unused when MODEL_BASE_URL points somewhere remote.
       - "host.docker.internal:host-gateway"
     volumes:
       - rag-data:/data
+      # Read-only, and only if the file is there. The key never enters the image.
+      - ./secrets:/run/secrets:ro
     deploy:
       resources:
         limits:
-          memory: 384M
+          memory: ${MEMORY_LIMIT:-384M}
         reservations:
           memory: 96M
 

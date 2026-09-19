@@ -2,6 +2,7 @@ node_modules/
 dist/
 site/app.js
 data/
+secrets/
 *.log
 .env
 .DS_Store

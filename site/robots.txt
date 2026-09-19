@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+# Nothing here is meant to be crawled: it is a prototype with no content of its own,
+# and every page a visitor sees is built in their browser from something they pasted.
+# There is no index to build and no snippet to show.

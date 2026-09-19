@@ -1,0 +1,14 @@
+{
+  "name": "rag — ask any document",
+  "short_name": "rag",
+  "description": "Paste an article, a diary or a resume, then ask it questions. Grounded answers with the dates, places, people and images they rest on.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08060f",
+  "theme_color": "#08060f",
+  "icons": [
+    { "src": "/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/android-chrome-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/android-chrome-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
