@@ -12,7 +12,7 @@
     <title>rag-demo.nodejavascript.com</title>
     <meta
       name="description"
-      content="Paste an article, a diary, a resume or a set of terms, then ask it questions. The answers quote the document and come with the dates, places, people and images they rest on."
+      content="Paste a diary, a resume or a set of terms, then ask it questions. Answers are grounded in the document, with the dates, places and people they rest on."
     />
     <link rel="canonical" href="https://rag-demo.nodejavascript.com/" />
     <meta name="theme-color" content="#03090b" />
@@ -42,6 +42,15 @@
     <meta name="twitter:image" content="https://rag-demo.nodejavascript.com/og.png" />
 
     <link rel="stylesheet" href="./styles.css" />
+
+    <!-- 🔴 THE COOKIE GATE, AND THE ONLY THING HERE THAT MAY LOAD GOOGLE'S SCRIPT.
+         The Google tag is deliberately NOT in this file. `consent.js` appends it at
+         runtime and only after a visitor says yes, so a visit that refuses makes no
+         request to Google at all and receives no cookie. The measurement id rides on
+         this script as an attribute rather than being hard-coded inside it, so a page
+         that declares no id gets no bar and no tag — the gate is shut by default
+         rather than open by default. -->
+    <script src="./consent.js" data-ga-id="G-F94ETXGE67" defer></script>
 
     <script type="application/ld+json">
       {
@@ -99,7 +108,7 @@
     </script>
   </head>
   <body>
-    <header class="top">
+    <header class="top" id="top">
       <div class="wrap top-in">
         <div class="brand">
           <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
@@ -345,30 +354,112 @@ It works best when the document has its own structure: dates on their own line, 
             question. Nothing else is sent — not the whole document, and not the parts that did not match.
             The document and the questions are never written to the log; only sizes and timings are.
           </p>
-          <h3 style="font-size: 15px; margin-top: 22px">This is a prototype</h3>
+          <h3 style="font-size: 15px; margin-top: 22px">What is counted, and what is not</h3>
           <p>
-            There is no account, no analytics and no tracking of any kind on this page. There is
-            deliberately no cookie. If that changes, this paragraph will say so before anything loads.
+            There is no account and nothing is stored about you. That leaves exactly one
+            optional thing: Google Analytics, which is <b>not loaded at all</b> unless you allow
+            it — so a visit that says no makes no request to Google and receives no cookie. What
+            is sent, when it is allowed, is about the page: which pages were opened, which
+            controls were pressed, and how far down people read.
+            <b>Never the text you paste and never the question you type.</b>
+          </p>
+          <p>
+            Your answer is remembered in your own browser's storage, not in a cookie — setting a
+            cookie to record a cookie decision would be its own small joke. You can change it
+            whenever you like from <b>Cookie settings</b> in the footer.
           </p>
         </section>
       </div>
     </main>
 
-    <footer>
-      <div class="wrap">
-        <div class="foot-links">
-          <a href="#how">How it works</a>
-          <a href="#not">What it is not</a>
-          <a href="#privacy">Privacy</a>
+    <!-- The cookie question, and the panel behind it.
+         Nothing here appears until consent.js has found a measurement id, and the bar
+         opens only when no answer has been remembered. Both views share this ONE fixed
+         bar and swap places inside it, because this is the element whose height is
+         measured and reserved at the bottom of the page. -->
+    <div class="consent" id="consentBar" role="dialog" aria-labelledby="consentTitle" hidden>
+      <div class="consentAsk" id="consentAsk">
+        <h2 class="consentTitle" id="consentTitle">Cookies are your call</h2>
+        <p class="consentText">
+          This page keeps no account and stores nothing about you. The one thing it would like is
+          a count of how people use it —
+          <b>and the text you paste is never sent to Google, whatever you answer here.</b>
+          Analytics is the only cookie on this page, it is not loaded until you say yes,
+          and <b>saying no makes no request to Google at all</b>.
+        </p>
+        <div class="consentActions">
+          <button id="consentAccept" class="ghost" type="button">Accept all</button>
+          <button id="consentDecline" class="ghost" type="button">Reject all</button>
         </div>
-        <p>© 2026 rag-demo.nodejavascript.com. All rights reserved.</p>
+        <button id="consentSettings" class="linkish consentSettings" type="button">Settings</button>
       </div>
+
+      <div class="consentPrefs" id="consentPrefs" hidden>
+        <div class="consentHead">
+          <h2 class="consentTitle">Cookie preferences</h2>
+          <button id="consentClose" class="consentClose" type="button" aria-label="Close cookie preferences">×</button>
+        </div>
+        <ul class="consentList">
+          <li class="consentRow">
+            <div>
+              <p class="consentRowName">Analytics</p>
+              <p class="consentRowWhy">
+                Google Analytics. It sets its own cookies and sends your page views, which controls
+                you press and how far down you read. It never sees the document you paste or the
+                question you type — the page has no way to send either.
+              </p>
+            </div>
+            <button
+              id="consentAnalytics"
+              class="consentSwitch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Analytics cookies"
+            >
+              <span class="consentDot" aria-hidden="true"></span><span id="consentAnalyticsWord">Off</span>
+            </button>
+          </li>
+          <li class="consentRow" id="consentDeviceRow" hidden>
+            <div>
+              <p class="consentRowName">This device</p>
+              <p class="consentRowWhy">
+                Leaves your own visits out of the numbers whatever the choice above says — it is how
+                the person who runs this site stays out of their own count.
+              </p>
+            </div>
+            <a id="countToggle" class="linkish" href="/?ga=off">Stop counting my visits</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <footer>
+      <div class="footer-brand">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 4h10l6 6v18H8z" />
+              <path d="M18 4v6h6" />
+              <path d="M12.5 16h7M12.5 20h7M12.5 24h3.5" />
+            </g>
+          </svg>
+        </span>
+        <span><b>rag-demo</b> · <a href="https://nodejavascript.com/">nodejavascript.com</a></span>
+      </div>
+      <p class="footer-links">
+        <a href="#how">How it works</a> ·
+        <a href="https://github.com/nodejavascript/rag-demo" rel="noopener">The TypeScript source and the tests</a> ·
+        <button id="consentBtn" class="linkish" type="button">Cookie settings</button> ·
+        <a href="#top">Back to top</a>
+      </p>
+      <p class="footer-copy">© 2026 rag-demo.nodejavascript.com. All rights reserved.</p>
     </footer>
 
     <!-- Reports a delete after the page has already gone back to its home state, so the
          report cannot live in the panel that was just removed. -->
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script type="module" src="./app.js?v=4"></script>
+    <script type="module" src="./app.js?v=5"></script>
   </body>
 </html>

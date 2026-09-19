@@ -1,6 +1,7 @@
 node_modules/
 dist/
 site/app.js
+site/consent.js
 data/
 secrets/
 *.log

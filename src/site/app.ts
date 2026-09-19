@@ -679,6 +679,34 @@ el.question.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') void askNow();
 });
 
+/**
+ * The one conversion this site has, sent once.
+ *
+ * A visitor pastes a document, waits for it to be read, then asks something and gets an
+ * answer grounded in it — that is the whole errand, so that is the conversion rather
+ * than a page load or a button press. Fired on the FIRST successful answer only; a
+ * visitor asking nine questions is one person who got what they came for, not nine.
+ *
+ * 🔴 THE OPTIONAL CHAIN IS THE GATE, NOT A CONVENIENCE. `ragTrack` is created by
+ * `consent.ts` and only after a visitor says yes — so on a page with no consent this
+ * line does nothing at all, because there is no function to call. **The question the
+ * visitor asked is never part of the payload**; only that a question was answered, and
+ * how long it took.
+ */
+let answeredOnce = false;
+function markAnswered(durationMs: number): void {
+  if (answeredOnce) return;
+  answeredOnce = true;
+  window.ragTrack?.('generate_lead', {
+    page_path: location.pathname,
+    // The number of characters the document holds, rounded to the nearest hundred — a
+    // size band, not the text. Enough to say whether people bring a paragraph or a
+    // book, and nothing that could reconstruct what they brought.
+    document_size_band: current ? Math.round(current.stats.characters / 100) * 100 : 0,
+    answer_ms: Math.round(durationMs),
+  });
+}
+
 async function askNow(): Promise<void> {
   if (!current || !el.question.value.trim()) {
     el.question.focus();
@@ -687,6 +715,7 @@ async function askNow(): Promise<void> {
   clear(el.askError);
   el.askButton.disabled = true;
   el.askButton.innerHTML = '<span class="spinner"></span>Reading';
+  const startedAt = performance.now();
 
   try {
     const response = await fetch('./api/ask', {
@@ -697,6 +726,7 @@ async function askNow(): Promise<void> {
     const body = (await response.json()) as Answer & { error?: string };
     if (!response.ok) throw new Error(body.error ?? `The server answered ${response.status}.`);
     renderAnswer(body);
+    markAnswered(performance.now() - startedAt);
   } catch (error) {
     showError(el.askError, error instanceof Error ? error.message : 'The question failed.');
   } finally {

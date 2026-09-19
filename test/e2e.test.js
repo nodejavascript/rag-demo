@@ -347,3 +347,263 @@ test('the school in the resume is the one the resume names', async (t) => {
     `the answer must not invent a university the resume never mentions, but it read: ${answer}`
   );
 });
+
+/* ==================================================================== *
+ * The cookie gate, in a real browser
+ * ==================================================================== *
+ *
+ * 🔴 **THESE TESTS EXIST BECAUSE THE PROMISE IS INVISIBLE.** The page says, in the panel
+ * and in the Privacy section, that a visit which refuses makes no request to Google at
+ * all. That claim is only worth anything if something checks it — so every test below
+ * watches the NETWORK, not the code. A gate that set a flag and loaded the tag anyway
+ * would render identically and pass a DOM assertion.
+ *
+ * Each one gets its own browser context, because the answer lives in localStorage and
+ * `addInitScript` is the only way to reproduce "they answered this last time" without
+ * clicking. Sharing the suite's page would leak one test's answer into the next, which
+ * is exactly the kind of coupling that makes a suite pass while the site is broken.
+ */
+
+/** Anything on Google's side of the wire. */
+const GOOGLE = /google-analytics\.com|googletagmanager\.com/;
+
+/**
+ * A fresh context, optionally with an answer already stored, with every request
+ * recorded. `addInitScript` runs before any page script, so a remembered choice is
+ * reproduced rather than clicked — which is the state a returning visitor is actually
+ * in.
+ */
+async function openWith({ consent = null, path = '/', ownerOff = false } = {}) {
+  const context = await browser.newContext({ viewport: { width: 1180, height: 900 } });
+  await context.addInitScript(
+    ([answer, optedOut]) => {
+      try {
+        if (answer) localStorage.setItem('analytics_consent', answer);
+        if (optedOut) localStorage.setItem('ga_opt_out', '1');
+      } catch {
+        /* storage off; the test then exercises the "nothing decided" path, and the
+           assertions below will say so rather than pass quietly */
+      }
+    },
+    [consent, ownerOff]
+  );
+  const requests = [];
+  const page = await context.newPage();
+  page.on('request', (request) => requests.push(request.url()));
+  await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' });
+  return { context, page, requests, toGoogle: () => requests.filter((url) => GOOGLE.test(url)) };
+}
+
+test('a visit that has not answered contacts nobody', async (t) => {
+  if (!browser) return t.skip('no browser');
+  const { context, page, toGoogle } = await openWith();
+  try {
+    assert.deepEqual(toGoogle(), [], 'a visit that has not consented must contact nobody');
+    assert.equal(
+      await page.evaluate(() => typeof window.gtag),
+      'undefined',
+      'there must be no gtag to call — not a gtag that stays quiet'
+    );
+    assert.equal(
+      await page.evaluate(() => typeof window.ragTrack),
+      'undefined',
+      'and no way for the page to send an event either'
+    );
+    assert.equal(await page.locator('#consentAsk').isVisible(), true, 'so the question is what is shown');
+    assert.equal(
+      await page.locator('#consentAnalytics').isVisible(),
+      false,
+      'and the switch is one click behind it rather than in the reader’s face'
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test('rejecting is remembered, and nothing loads', async (t) => {
+  if (!browser) return t.skip('no browser');
+  const { context, page, toGoogle } = await openWith();
+  try {
+    await page.click('#consentDecline');
+    await page.waitForFunction(() => document.getElementById('consentBar').hidden);
+    assert.equal(await page.evaluate(() => localStorage.getItem('analytics_consent')), 'denied');
+    assert.equal(await page.evaluate(() => typeof window.gtag), 'undefined');
+
+    // The honest half: refusing is not a nag. A returning visitor is not asked again.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(
+      await page.evaluate(() => document.getElementById('consentBar').hidden),
+      true,
+      'the bar must not come back on the next visit'
+    );
+    assert.deepEqual(toGoogle(), [], 'and a refusal must still make no request to Google');
+  } finally {
+    await context.close();
+  }
+});
+
+test('accepting loads the tag, once, and only after the answer', async (t) => {
+  if (!browser) return t.skip('no browser');
+  const { context, page, toGoogle } = await openWith();
+  try {
+    assert.deepEqual(toGoogle(), [], 'nothing before the answer');
+    await page.click('#consentAccept');
+    await page.waitForFunction(() => document.getElementById('consentBar').hidden);
+    // ⚠️ Playwright's signature is `waitForRequest(urlOrPredicate, options)`. Passing a
+    // placeholder second argument reads `null` as the options object and throws about a
+    // missing `timeout` — the options go SECOND.
+    await page.waitForRequest((request) => GOOGLE.test(request.url()), { timeout: 15000 });
+
+    assert.equal(await page.evaluate(() => localStorage.getItem('analytics_consent')), 'granted');
+    assert.equal(await page.evaluate(() => typeof window.ragTrack), 'function', 'the page gains its own way to send');
+
+    const google = toGoogle();
+    assert.ok(
+      google.some((url) => url.includes('googletagmanager.com/gtag/js')),
+      'the tag itself must be fetched'
+    );
+    // Exactly one tag. Loading it twice is the ordinary way a page double-counts every
+    // visitor, and the guard that prevents it is a boolean in the gate.
+    assert.equal(
+      google.filter((url) => url.includes('/gtag/js')).length,
+      1,
+      `the tag must load exactly once: ${google.join(', ')}`
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * 🔴 THE ASSERTION THIS WHOLE FILE IS REALLY FOR.
+ *
+ * The page asks people to paste a diary, a resume, a set of terms. Its promise — in the
+ * bar, in the panel and in the Privacy section — is that the text goes to the model and
+ * nowhere else. So this grants consent, puts an unmistakable marker in BOTH boxes, drives
+ * the page, and then reads every request that went to Google looking for it. It needs no
+ * model: the claim is about what the page can send, and the page's sending path is the
+ * gate.
+ */
+test('the text in the boxes never reaches Google', async (t) => {
+  if (!browser) return t.skip('no browser');
+  const { context, page, requests } = await openWith({ consent: 'granted' });
+  const MARKER = 'ZWARTHOOF-9931-SECRET-DIARY';
+  try {
+    await page.waitForRequest((request) => GOOGLE.test(request.url()), { timeout: 15000 });
+
+    await page.fill('#paste', `${MARKER} — private notes about nothing in particular.`);
+    // ⚠️ `#question` is only revealed once a document has been indexed, and indexing needs
+    // a model — this test must not. The claim being checked is about what the page can
+    // SEND, so the value is put in the box directly: the text is in the field either way,
+    // and the gate does not know the difference between typed and assigned.
+    await page.evaluate((value) => {
+      document.getElementById('question').value = value;
+    }, `What does ${MARKER} say?`);
+    // Press a real control too, so the click listener — which names elements by id and
+    // tag — is exercised while the boxes hold text. A footer anchor, because it has no
+    // side effects: indexing would need a model, and this test must not.
+    await page.click('.footer-links a[href="#how"]');
+    await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+    await page.waitForTimeout(600);
+
+    const carrying = requests.filter((url) => url.includes(MARKER));
+    assert.deepEqual(carrying, [], `a request left with the text in it: ${carrying.join(', ')}`);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the owner can keep his own visits out, both ways', async (t) => {
+  if (!browser) return t.skip('no browser');
+  // Already allowed analytics — and still nothing loads, because the owner's switch
+  // beats consent. That ordering is the point: it works without changing what every
+  // visitor is offered.
+  const { context, page, toGoogle } = await openWith({ consent: 'granted', ownerOff: true });
+  try {
+    await page.waitForTimeout(1200);
+    assert.deepEqual(toGoogle(), [], '?ga=off must beat a granted answer');
+    assert.equal(await page.evaluate(() => typeof window.gtag), 'undefined');
+  } finally {
+    await context.close();
+  }
+
+  const on = await openWith({ path: '/?ga=on' });
+  try {
+    assert.equal(await on.page.evaluate(() => localStorage.getItem('ga_opt_out')), null, '?ga=on clears it');
+  } finally {
+    await on.context.close();
+  }
+});
+
+test('the footer door reopens the answer without re-asking the question', async (t) => {
+  if (!browser) return t.skip('no browser');
+  const { context, page } = await openWith({ consent: 'granted' });
+  try {
+    assert.equal(await page.evaluate(() => document.getElementById('consentBar').hidden), true);
+    await page.click('#consentBtn');
+    await page.waitForSelector('#consentPrefs:not([hidden])');
+    assert.equal(
+      await page.locator('#consentAsk').isVisible(),
+      false,
+      'somebody who already answered must not be asked again'
+    );
+    assert.equal(
+      await page.locator('#consentAnalytics').getAttribute('aria-checked'),
+      'true',
+      'and the switch must show the answer they gave'
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test('the cookie bar does not sit on top of the footer it belongs to', async (t) => {
+  if (!browser) return t.skip('no browser');
+  // The banner is fixed to the bottom, so it takes the click on whatever is behind it.
+  // On inputresponse that made the footer unclickable until a question about cookies had
+  // been answered — and the footer is where the link to the domain lives here.
+  //
+  // ⚠️ Asserted by HIT-TESTING rather than by clicking through: the link points at the
+  // live internet, and a test that navigates to a real third-party site is slow, flaky,
+  // and fails for reasons that have nothing to do with this code. `elementFromPoint`
+  // asks the browser what is actually at that pixel, which is precisely the question —
+  // if the banner is over it, the answer is the banner.
+  const { context, page } = await openWith();
+  try {
+    assert.equal(await page.locator('#consentAsk').isVisible(), true, 'the bar is up');
+    const reserved = await page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).paddingBottom));
+    assert.ok(reserved > 0, `the page must leave room for the banner, but reserved ${reserved}px`);
+
+    const land = await page.evaluate(() => {
+      const link = document.querySelector('footer a[href="https://nodejavascript.com/"]');
+      if (!link) return { found: false };
+      // ⚠️ The page sets `html { scroll-behavior: smooth }`, so `scrollIntoView()` starts
+      // an ANIMATION and the rectangle read on the next line is the one from before it
+      // moved — which is how this first reported the link as hidden under `nothing`.
+      // Forced instant for the measurement, then put back.
+      const html = document.documentElement;
+      const was = html.style.scrollBehavior;
+      html.style.scrollBehavior = 'auto';
+      link.scrollIntoView({ block: 'center' });
+      html.style.scrollBehavior = was;
+      const box = link.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {
+        found: true,
+        href: link.getAttribute('href'),
+        covered: !(hit === link || link.contains(hit)),
+        coveredBy: hit ? hit.className || hit.tagName : 'nothing',
+      };
+    });
+
+    assert.equal(land.found, true, 'the footer must link to the domain');
+    assert.equal(land.href, 'https://nodejavascript.com/');
+    assert.equal(
+      land.covered,
+      false,
+      `the cookie bar is covering the footer link — it is under \`${land.coveredBy}\``
+    );
+  } finally {
+    await context.close();
+  }
+});

@@ -145,6 +145,48 @@ nothing.
 
 ---
 
+## The cookie gate
+
+This page is a bad place to be careless about consent: the whole thing asks people to
+paste something they care about — a diary, a resume, a medical letter. So the gate is not
+a banner that says "we use cookies". It is built so that **the default outcome is that
+nothing is counted and nothing is loaded**, and a refusal is as easy as a yes.
+
+| | |
+|---|---|
+| the analytics script | **not in the page.** `consent.js` appends it at runtime, only after a yes |
+| a visit that refuses | makes **no request to Google at all** and receives **no cookie** — not "cookies disabled", never loaded |
+| where the answer lives | `localStorage`, not a cookie. Setting a cookie to record a cookie decision is its own small joke |
+| Accept all / Reject all | the same class, size, weight and distance. A test fails if they ever differ |
+| the longer answer | a panel with **one** switch, which arrives **off** — a box that starts ticked is a default, not a choice |
+| the owner's own switch | `?ga=off` / `?ga=on`, remembered, and it beats consent |
+| **the document and the question** | **never sent, ever.** The gate reads no input value at all, and a test forbids it from touching either box |
+
+**`window.ragTrack` does not exist until a visitor says yes.** That is the mechanism, not a
+detail: the page's own conversion event calls `window.ragTrack?.(...)`, so on a page with
+no consent there is no function to call rather than a function that stays quiet. One is a
+promise; the other is a habit.
+
+### What the tests actually assert
+
+`test/consent.test.js` is static — it reads the files that ship and refuses on their
+shape. `test/e2e.test.js` drives a real browser and **watches the network**, because a gate
+that set a flag and loaded the tag anyway would render identically and pass a DOM
+assertion. `tools/verify-live-consent.mjs` runs the same checks against the deployed site,
+where DNS, TLS, Caddy, Cloudflare's cache and the measurement id all have to be right at
+once.
+
+The three that matter most:
+
+1. **the page loads nothing from another origin** — so a visit that has not answered
+   contacts nobody, whoever the third party is;
+2. **no Google tag sits in the page itself** — so the gate is the only door;
+3. **the gate never reads the paste box or the question** — written as a blanket ban on
+   `.value`, not a list of forbidden payloads, because a payload rule only covers the
+   leaks somebody thought of.
+
+---
+
 ## Deploying
 
 The container publishes on **loopback only**; the Caddy on the host is what serves it.
@@ -176,6 +218,22 @@ this one.
 
 The document text and the questions are **never written to the log** — only sizes,
 counts and timings. A privacy promise the log contradicts is not a promise.
+
+### It is listed on nodejavascript.com
+
+A demo nobody can find is a demo nobody uses, so the site is a card in the **Artificial
+Intelligence** section of `nodejavascript.com`, beside `llm-demo` — same heading, same
+grid, same card, which is what keeps that page a catalogue rather than a pitch.
+
+That page is static and rsync'd:
+
+```bash
+cd ../nodejavascript.com
+rsync -a --delete site/ dvs-sites:/srv/nodejavascript.com/site/
+```
+
+🔴 **Adding the card is part of shipping a demo, not a follow-up.** The listing is also
+what makes the site discoverable at all, and it is the inbound link Google uses.
 
 ---
 
