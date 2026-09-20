@@ -396,7 +396,11 @@ const server = createServer((request, response) => {
         return;
       }
 
-      if (path === '/api/ask' && request.method === 'POST') {
+      if ((path === '/api/ask' || path === '/api/ask/stream') && request.method === 'POST') {
+        // 🔴 TWO FRONT DOORS, ONE ANSWER — the same rule as the index. A stream cannot answer with
+        // one JSON document, so the plain endpoint stays exactly as it was for anything already
+        // reading it. Both call the SAME `answer()`; only the reporting differs.
+        const streaming = path === '/api/ask/stream';
         if (limited(`ask:${client}`, Number.parseInt(process.env.ASK_PER_HOUR ?? '240', 10), 3600_000)) {
           sendJson(response, 429, { error: 'That is a lot of questions in an hour. Try again a little later.' });
           return;
@@ -407,14 +411,39 @@ const server = createServer((request, response) => {
           sendJson(response, 400, { error: 'Which document? No document id was sent.' });
           return;
         }
+        if (streaming) {
+          response.writeHead(200, {
+            'content-type': 'application/x-ndjson; charset=utf-8',
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+          });
+        }
+        const send = (line: unknown): void => {
+          if (streaming) response.write(`${JSON.stringify(line)}\n`);
+        };
         const started = Date.now();
-        const result = await answer(store, model, payload.docId, (payload.question ?? '').trim(), {
-          retrieve: DEFAULT_RETRIEVE,
-        } satisfies AnswerOptions);
-        console.log(
-          `asked doc=${payload.docId} mode=${result.mode} notes=${result.sources.length} ms=${Date.now() - started}`
-        );
-        sendJson(response, 200, result);
+        try {
+          const result = await answer(store, model, payload.docId, (payload.question ?? '').trim(), {
+            retrieve: DEFAULT_RETRIEVE,
+            onStage: (stage) => send({ type: 'progress', ...stage }),
+          } satisfies AnswerOptions);
+          console.log(
+            `asked doc=${payload.docId} mode=${result.mode} notes=${result.sources.length} ms=${Date.now() - started}`
+          );
+          if (streaming) {
+            send({ type: 'result', ...result });
+            response.end();
+          } else {
+            sendJson(response, 200, result);
+          }
+        } catch (error) {
+          if (streaming) {
+            send({ type: 'error', error: error instanceof Error ? error.message : 'That question failed.' });
+            response.end();
+            return;
+          }
+          throw error;
+        }
         return;
       }
 

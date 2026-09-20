@@ -277,6 +277,18 @@ It works best when the document has its own structure: dates on their own line, 
           <div class="row tight" id="suggestions"></div>
           <div id="ask-error"></div>
 
+          <!-- 🔴 THE CHART THAT RUNS WHILE THE ANSWER IS BEING BUILT. George, 20 Sep 2026: *"when
+               i ask a question, is there some sort of progress chart that can be applied?"* Two
+               thirds of answering is measurable — the searches, and how long each stage took — and
+               the last third is a single model call with nothing inside it to count. So this shows
+               the stages that really happened, with the running one growing against the clock, and
+               it says "still running" rather than pretending to know. -->
+          <div class="chart-box" id="ask-progress" hidden>
+            <h3 id="ask-progress-title">Answering</h3>
+            <p id="ask-progress-note">Starting.</p>
+            <canvas id="ask-chart" height="104"></canvas>
+          </div>
+
           <div class="answer-wrap" id="answer-wrap" hidden>
             <div class="answer" id="answer">
               <p class="q" id="answer-q"></p>

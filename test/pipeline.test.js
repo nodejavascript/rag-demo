@@ -686,3 +686,82 @@ test('and an index that is reused says so instead of pretending to work', async 
     close();
   }
 });
+
+/* ------------------------------------------------- while a question is answered */
+
+test('an answer reports the stages it really went through, with their measured times', async () => {
+  // 🔴 THE CHART THE READER SEES WHILE WAITING IS ONLY WORTH SHOWING IF ITS NUMBERS ARE REAL. George,
+  // 20 Sep 2026: *"when i ask a question, is there some sort of progress chart that can be applied?"*
+  // So the assertions are about meaning, not shape: three stages in the order the work happens, a
+  // search that hands over what it found and what it kept, and a model stage reported TWICE — once
+  // before the call, with no duration, because a running stage must not claim one, and once after.
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    const { document } = await indexDocument(store, model, { text: diary });
+    const seen = [];
+    await answer(store, model, document.id, 'What did Andrea bring?', {
+      onStage: (stage) => seen.push({ ...stage }),
+    });
+
+    assert.deepEqual(
+      [...new Set(seen.map((stage) => stage.stage))],
+      ['search', 'notes', 'model'],
+      'the stages are reported in the order the work happens'
+    );
+
+    const search = seen.find((stage) => stage.stage === 'search');
+    assert.ok(Number.isFinite(search.tookMs) && search.tookMs >= 0, 'the search carries its own time');
+    assert.ok(search.found > 0, 'and what it found');
+    assert.ok(search.kept > 0 && search.kept <= search.found, 'and what it kept, which cannot exceed it');
+
+    const notes = seen.filter((stage) => stage.stage === 'notes');
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].silent, false, 'this question is answerable, so no model was skipped');
+
+    const modelStages = seen.filter((stage) => stage.stage === 'model');
+    assert.equal(modelStages.length, 2, 'the model is announced before the call and reported after it');
+    assert.equal(
+      modelStages[0].tookMs,
+      undefined,
+      'the running report must NOT claim a duration — that is the one thing it cannot know'
+    );
+    assert.ok(modelStages[1].tookMs >= 0, 'and the finished one carries a real number');
+
+    for (let i = 1; i < seen.length; i += 1) {
+      assert.ok(seen[i].ms >= seen[i - 1].ms, 'and the clock never goes backwards');
+    }
+  } finally {
+    close();
+  }
+});
+
+test('and a question with nothing to answer from reports no model stage at all', async () => {
+  // The silent path: the search found nothing close enough, so no model was called. The chart must
+  // show exactly the stages that ran — a row for a stage that never happened would be a picture of
+  // work that was never done.
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    const { document } = await indexDocument(store, model, { text: diary });
+    const seen = [];
+    // 🔴 FORCED, NOT HOPED FOR. A question of words that appear nowhere in the notes gets no keyword
+    // hit, so an impossible `refusalFloor` makes the document silent by construction — the first
+    // version of this test asked an ordinary question and RETURNED EARLY if the retrieval happened
+    // to find something, which is a check that passes by doing nothing. (An ordinary question cannot
+    // be used: `refusalFloor: 2` alone did NOT silence it, because a keyword hit outranks the floor.)
+    const result = await answer(store, model, document.id, 'Zzyzx quokka perihelion?', {
+      retrieve: { refusalFloor: 2, useRerank: false },
+      onStage: (stage) => seen.push({ ...stage }),
+    });
+    assert.equal(result.mode, 'refused', 'nothing matched and the floor was impossible, so it must refuse');
+    assert.equal(
+      seen.some((stage) => stage.stage === 'model'),
+      false,
+      'no model was called, so no model stage may be reported'
+    );
+    assert.equal(seen.find((stage) => stage.stage === 'notes')?.silent, true, 'and the reason is said out loud');
+  } finally {
+    close();
+  }
+});

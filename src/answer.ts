@@ -28,6 +28,33 @@ export interface AnswerOptions {
   retrieve?: RetrieveOptions;
   /** Raise the sampling away from 0 when the words matter more than the repeatability. */
   temperature?: number;
+  /**
+   * Called as the answer is built, with a stage that has just FINISHED and how long it took.
+   *
+   * 🔴 THE THREE STAGES ARE REAL, AND ONE OF THEM IS HONESTLY LONG. George asked for progress while
+   * an answer is being written — *"when i ask a question, is there some sort of progress chart that
+   * can be applied?"* — and the answer is that two thirds of the pipeline is measurable and the
+   * last third is a single model call with nothing inside it to count. So: `search` (the keyword
+   * and meaning searches, fused), `notes` (what was kept, and the decision to answer or to refuse
+   * without calling a model at all), and `model` — which is reported BEFORE the call, because the
+   * wait it announces is the wait the reader is about to have. **No stage reports progress within
+   * the model call, because there is none to report**: the page says "still running" and the clock
+   * is the only true thing it can show.
+   */
+  onStage?: (stage: AnswerStage) => void;
+}
+
+/** A stage of answering, with the time it actually took — measured, never estimated. */
+export interface AnswerStage {
+  stage: 'search' | 'notes' | 'model';
+  /** Milliseconds since the question was asked. */
+  ms: number;
+  /** How long THIS stage took, when it has finished. Absent while it is running. */
+  tookMs?: number;
+  /** Counts the stage can hand over: what the search found and kept, and whether a model is used. */
+  found?: number;
+  kept?: number;
+  silent?: boolean;
 }
 
 /**
@@ -145,8 +172,17 @@ export async function answer(
     throw new AppError('That document is no longer here. It may have expired, or been deleted.', 404);
   }
 
+  const report = (stage: AnswerStage): void => options.onStage?.(stage);
+
   const retrieval = await retrieve(store, model, docId, question, options.retrieve);
   const warnings = [...retrieval.warnings];
+  report({
+    stage: 'search',
+    ms: Date.now() - started,
+    tookMs: retrieval.retrieveMs,
+    found: retrieval.ranked,
+    kept: retrieval.scored.length,
+  });
 
   // Read once, here, because both paths need it: the refusal draws the same spine, with
   // nothing marked on it — which is a true picture of a document that answered nothing.
@@ -167,6 +203,16 @@ export async function answer(
     entries: store.entries(docId),
     mentions: document.mentions,
     documentText: store.documentText(docId),
+  });
+
+  // Reported before the branch, because the branch is the interesting part: with nothing to answer
+  // from, no model is called at all and the reader should see that the wait is already over.
+  report({
+    stage: 'notes',
+    ms: Date.now() - started,
+    tookMs: Date.now() - started - retrieval.retrieveMs,
+    kept: retrieval.scored.length,
+    silent: retrieval.silent,
   });
 
   if (retrieval.silent) {
@@ -221,6 +267,10 @@ export async function answer(
     assumedYear: document.stats.assumedYear,
   });
 
+  // 🔴 SENT BEFORE THE CALL, NOT AFTER. `tookMs` is deliberately absent: this stage has not
+  // finished, and the page draws it as running. Announcing it first is what turns a dead spinner
+  // into "the model is writing the answer", which is the only true thing known during the wait.
+  report({ stage: 'model', ms: Date.now() - started });
   const modelStarted = Date.now();
   const reply = await model.chat(messages, {
     temperature: options.temperature ?? DEFAULT_TEMPERATURE,
@@ -228,6 +278,7 @@ export async function answer(
     numPredict: 700,
   });
   const modelMs = Date.now() - modelStarted;
+  report({ stage: 'model', ms: Date.now() - started, tookMs: modelMs });
 
   const refused = isRefusal(reply);
   const shape = readShape(reply);

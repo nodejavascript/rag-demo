@@ -927,3 +927,176 @@ test('and a diary draws days as marks instead of bars', async (t) => {
   assert.match(drawn.note, /each mark is one entry/i, 'and the caption must say these are single dates');
   assert.doesNotMatch(drawn.note, /period/i, 'a diary has no periods, and must not be described as if it had');
 });
+
+/* ------------------------------------------------- how an answer is built, as it is built */
+
+/**
+ * 🔴 THE CHART IS THE POINT OF THE WAIT, SO IT IS TESTED FROM THE WIRE UP.
+ *
+ * George asked for this on 20 Sep 2026: *"when i ask a question, is there some sort of progress chart
+ * that can be applied?"* There are two halves, and each can fail on its own — the server can decide
+ * to send one lump at the end (a chart that only ever appears after the answer, which is no chart at
+ * all), and the page can fail to show what it was sent. So the stream is read line by line off the
+ * socket, and the panel is watched in the browser.
+ */
+test('the answer arrives as stages as they happen, and the totals agree with them', async (t) => {
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+
+  // Indexed over the API rather than through the page, because this test is about the wire.
+  const indexed = await fetch(`${BASE}/api/index`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: await diary(), name: 'stream test' }),
+  });
+  const { document } = await indexed.json();
+
+  const response = await fetch(`${BASE}/api/ask/stream`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ docId: document.id, question: 'What did Andrea bring?' }),
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /ndjson/, 'it must be a line-at-a-time stream');
+
+  // Read it incrementally: if the server buffered the whole thing, the first line would arrive at
+  // the same moment as the last, and that is exactly the fault being guarded against.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const lines = [];
+  const arrivals = [];
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let index = buffer.indexOf('\n');
+    while (index >= 0) {
+      const line = buffer.slice(0, index).trim();
+      buffer = buffer.slice(index + 1);
+      if (line.length > 0) {
+        lines.push(JSON.parse(line));
+        arrivals.push(Date.now());
+      }
+      index = buffer.indexOf('\n');
+    }
+  }
+
+  const kinds = lines.map((line) => line.type);
+  assert.equal(kinds.at(-1), 'result', 'exactly one result, and it comes last');
+  assert.equal(kinds.filter((kind) => kind === 'result').length, 1);
+  assert.equal(kinds.filter((kind) => kind !== 'progress' && kind !== 'result').length, 0, 'nothing else is sent');
+
+  const progress = lines.filter((line) => line.type === 'progress');
+  assert.deepEqual(
+    progress.map((stage) => stage.stage),
+    ['search', 'notes', 'model', 'model'],
+    'search, then the notes chosen, then the model announced, then the model reported'
+  );
+
+  const search = progress[0];
+  assert.ok(Number.isFinite(search.tookMs) && search.tookMs >= 0, 'the search is measured');
+  assert.ok(search.found > 0 && search.kept > 0 && search.kept <= search.found);
+  assert.equal(progress[1].silent, false);
+  assert.equal(progress[2].tookMs, undefined, 'a call in flight has no duration to report');
+  assert.ok(Number.isFinite(progress[3].tookMs) && progress[3].tookMs >= 0);
+
+  const result = lines.at(-1);
+  assert.equal(result.timings.retrieveMs, search.tookMs, 'the total counts the same search it reported');
+  assert.equal(result.timings.modelMs, progress[3].tookMs, 'and the same model call');
+  for (let i = 1; i < progress.length; i += 1) {
+    assert.ok(progress[i].ms >= progress[i - 1].ms, 'and its clock never goes backwards');
+  }
+
+  // 🔴 THE ONE ASSERTION THAT PROVES IT STREAMS RATHER THAN POSTS. It is conditional on purpose:
+  // when the model answers in under a second the whole reply can legitimately arrive in one chunk,
+  // and demanding a gap there would be inventing a fault. When the model takes longer than a second,
+  // a first line that arrives with the last one means nothing was streamed.
+  if (result.timings.totalMs > 1000) {
+    const gap = arrivals.at(-1) - arrivals[0];
+    assert.ok(
+      gap > 100,
+      `the first stage arrived ${gap} ms before the result, over a ${result.timings.totalMs} ms answer — the stages are not being streamed`
+    );
+  }
+});
+
+test('the page shows how the answer is being built, while it is being built', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  // 🔴 SAMPLED BY OBSERVER, NOT BY POLLING. A stage can be reported and the next one arrive between
+  // two polls, and a test that misses it reports a pass it did not earn — the trap the index chart's
+  // own test was written against, and the reason this watches the panel instead of looking at it.
+  await page.evaluate(() => {
+    window.__ask = [];
+    const sample = () => {
+      const canvas = document.getElementById('ask-chart');
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let painted = 0;
+      for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted += 1;
+      window.__ask.push({
+        note: document.getElementById('ask-progress-note').innerText,
+        title: document.getElementById('ask-progress-title').innerText,
+        rows: canvas.dataset.rows,
+        painted,
+        waiting: document.getElementById('answer-wrap').hidden,
+      });
+    };
+    sample();
+    new MutationObserver(sample).observe(document.getElementById('ask-progress'), {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  });
+
+  await page.fill('#question', 'What did Andrea bring?');
+  await page.evaluate(() => document.getElementById('ask').click());
+  await page.waitForFunction(
+    () => !document.getElementById('answer-wrap').hidden && document.getElementById('answer-prose').innerText.length > 5,
+    null,
+    { timeout: 180000 }
+  );
+
+  const samples = await page.evaluate(() => window.__ask);
+  const waiting = samples.filter((sample) => sample.waiting);
+  assert.ok(waiting.length > 0, 'the panel must be up while the reader is still waiting, not only afterwards');
+  assert.ok(
+    waiting.some((sample) => /searching|found|reading|writing|chose/i.test(sample.note)),
+    `the caption must say what is happening — saw: ${JSON.stringify(waiting.map((sample) => sample.note))}`
+  );
+  assert.ok(
+    waiting.some((sample) => sample.painted > 0),
+    'and something must be drawn on the chart before the answer arrives'
+  );
+  assert.ok(
+    waiting.some((sample) => /answering/i.test(sample.title)),
+    'while it is running it is titled as a running thing'
+  );
+
+  const after = await page.evaluate(() => ({
+    hidden: document.getElementById('ask-progress').hidden,
+    title: document.getElementById('ask-progress-title').innerText,
+    note: document.getElementById('ask-progress-note').innerText,
+    rows: document.getElementById('ask-chart').dataset.rows,
+  }));
+  assert.equal(after.hidden, false, 'the chart stays after the answer — it is the record of how it was built');
+  assert.match(after.title, /how the answer was built/i);
+  assert.match(after.note, /\d/, 'and the caption carries the real timings');
+
+  // 🔴 THE STALE-ROW GUARD. The model is announced before its call and reported after it, so a chart
+  // that draws every report leaves a row still saying "still running" — and still growing — on a
+  // question that has already been answered. Measured on the live site on 20 Sep 2026: four rows
+  // where three stages ran. One row per stage.
+  assert.equal(after.rows, '3', `three stages ran, so three rows must be drawn — got ${after.rows}`);
+  assert.ok(
+    waiting.every((sample) => sample.rows === undefined || Number(sample.rows) <= 3),
+    `no sample may ever show more rows than stages that have run — saw ${JSON.stringify([...new Set(waiting.map((sample) => sample.rows))])}`
+  );
+  await assertNothingStretched('with the progress chart up');
+});

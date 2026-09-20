@@ -344,6 +344,8 @@ input:focus { border-color: var(--accent-2); }
 #heat-box, #funnel-box { margin-top: 14px; }
 /* The chart that runs while the index is being built, in step 1 beside the button. */
 #index-progress { margin-top: 12px; }
+/* The chart that runs while an answer is being built, above the answer itself. */
+#ask-progress { margin: 0 0 14px; }
 
 
 /* ---------- answer ---------- */

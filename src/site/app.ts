@@ -221,6 +221,156 @@ interface Canvas {
 }
 
 /** Size the backing store to the device pixel ratio, so lines are not furry. */
+/* ------------------------------------------------- while a question is answered */
+
+/** A stage of answering, as the server reported it — with real milliseconds. */
+interface AskStage {
+  stage: 'search' | 'notes' | 'model';
+  /** Milliseconds since the question was asked, when this was reported. */
+  ms: number;
+  /** How long the stage took. Absent while it is still running. */
+  tookMs?: number;
+  found?: number;
+  kept?: number;
+  silent?: boolean;
+}
+
+const ASK_STAGE_WORDS: Record<string, string> = {
+  search: 'Searched the notes',
+  notes: 'Chose what to read',
+  model: 'The model wrote the answer',
+};
+
+interface AnswerTimings {
+  retrieveMs: number;
+  rerankMs: number;
+  modelMs: number;
+  totalMs: number;
+}
+
+/**
+ * A chart of how the answer was built: one row per stage that actually ran.
+ *
+ * 🔴 TWO THIRDS OF THIS IS MEASURED AND ONE THIRD HONESTLY IS NOT. George, 20 Sep 2026: *"when i
+ * ask a question, is there some sort of progress chart that can be applied?"* The searches and the
+ * choosing are real, finished stages with real milliseconds on them. The model call is a single
+ * request with **nothing inside it to count**, so its row is drawn against the clock and says
+ * *"still running"* — a growing bar is the only true thing available, and pretending to know how
+ * far through the model is would be the one thing this page must never do.
+ *
+ * A row appears only once its stage has been reported, so the chart grows as the work does.
+ */
+/**
+ * The rows to draw: a stage announced before it ran is a placeholder, and the report carrying its
+ * measurement replaces it rather than joining it.
+ *
+ * 🔴 WHY THIS EXISTS. The model call is reported twice — once when it starts, so its bar can grow
+ * against the clock, and once when it returns, with its real time. Drawing both left a FINISHED
+ * chart with a row still saying *"still running"* and still growing, on a question that had already
+ * been answered: George's screenshot on 20 Sep 2026 showed four rows where three stages ran.
+ */
+function askRows(stages: AskStage[]): AskStage[] {
+  const rows: AskStage[] = [];
+  for (const stage of stages) {
+    const open = rows.findIndex((row) => row.stage === stage.stage && row.tookMs === undefined);
+    if (stage.tookMs !== undefined && open >= 0) rows[open] = stage;
+    else rows.push(stage);
+  }
+  return rows;
+}
+
+function drawAskStages(canvas: HTMLCanvasElement, stages: AskStage[], nowMs: number): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+
+  const pad = { top: 12, right: 12, bottom: 20, left: 8 };
+  const plotW = Math.max(20, w - pad.left - pad.right);
+  const rows = Math.max(1, stages.length);
+  // What the reader can count, said out loud on the element — a canvas cannot be asked.
+  canvas.dataset.rows = String(stages.length);
+  const axisY = h - pad.bottom;
+  const rowH = Math.min(30, Math.max(11, (axisY - pad.top - 4) / rows));
+
+  // The x scale is milliseconds, and it stretches as the slowest stage grows: a search of 40 ms
+  // beside a model call of four seconds must not crush the search to nothing.
+  const ends = stages.map((stage) => (stage.tookMs === undefined ? nowMs : stage.ms));
+  const span = Math.max(120, ...ends, nowMs);
+  const x = (ms: number): number => pad.left + (ms / span) * plotW;
+
+  ctx.strokeStyle = '#1b434b';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, axisY + 0.5);
+  ctx.lineTo(pad.left + plotW, axisY + 0.5);
+  ctx.stroke();
+
+  ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillStyle = '#7ba1a8';
+  ctx.fillText(`${(span / 1000).toFixed(1)} s`, pad.left + plotW - 30, axisY + 14);
+  ctx.fillText('0', pad.left, axisY + 14);
+
+  stages.forEach((stage, at) => {
+    const colour = COLOURS[at % COLOURS.length] as string;
+    const startedAt = stage.tookMs === undefined ? stage.ms : stage.ms - stage.tookMs;
+    const endedAt = stage.tookMs === undefined ? nowMs : stage.ms;
+    const y = pad.top + at * rowH;
+    const barH = Math.max(6, rowH - 8);
+    const from = x(startedAt);
+    const width = Math.max(2, x(endedAt) - from);
+
+    const gradient = ctx.createLinearGradient(from, 0, from + width, 0);
+    gradient.addColorStop(0, colour);
+    gradient.addColorStop(1, `${colour}55`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.roundRect(from, y + 1, width, barH, Math.min(4, barH / 2));
+    ctx.fill();
+
+    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    const word = ASK_STAGE_WORDS[stage.stage] ?? stage.stage;
+    const timing =
+      stage.tookMs === undefined
+        ? `${((nowMs - startedAt) / 1000).toFixed(1)} s, still running`
+        : `${stage.tookMs} ms`;
+    const room = plotW - (from + width) - 6;
+    const inside = ctx.measureText(timing).width <= width - 12;
+
+    // 🔴 ONE LINE PER ROW, AND NEVER INTO THE ROW BELOW. A small finished stage — the 183 ms search
+    // beside a 3-second model call — is far too narrow to hold its own timing, and an earlier
+    // version wrote that timing on a second line *underneath the row*, which put it inside the row
+    // BELOW: George's screenshot of the live chart on 20 Sep 2026 showed **183 ms** printed across
+    // **Chose what to read**. The timing is in the caption above the chart anyway, so leaving it off
+    // a bar that cannot hold it loses nothing and stops two rows from writing over each other.
+    const together = `${word} \u00b7 ${timing}`;
+    if (inside) {
+      ctx.fillStyle = '#04221f';
+      // 🔴 A BAR THAT CARRIES ITS OWN TIMING STILL HAS TO SAY WHAT IT MEASURED. The longest bar runs
+      // to the right edge of the plot, so its name can never go beside it — it goes inside, with the
+      // number, provided the pair fits. Measured on the live chart 20 Sep 2026: the model's row drew
+      // **2789 ms** and nothing else, and a number with no noun is not a chart.
+      if (ctx.measureText(together).width <= width - 12) {
+        ctx.fillText(together, from + 6, y + rowH / 2);
+      } else {
+        ctx.fillText(shortenToFit(ctx, timing, Math.max(24, width - 12)), from + 6, y + rowH / 2);
+        if (room > ctx.measureText(word).width + 8) {
+          ctx.fillStyle = '#7ba1a8';
+          ctx.fillText(word, from + width + 5, y + rowH / 2);
+        }
+      }
+    } else {
+      ctx.fillStyle = '#b2d3d8';
+      ctx.fillText(
+        shortenToFit(ctx, word, Math.max(24, room)),
+        from + width + 5,
+        y + rowH / 2
+      );
+    }
+    ctx.textBaseline = 'alphabetic';
+  });
+}
+
 /**
  * The timeline: the width of a bar IS the period the entry states.
  *
@@ -758,6 +908,10 @@ const el = {
   step4: $('step-4'),
   indexButton: $<HTMLButtonElement>('index'),
   indexStat: $('index-stat'),
+  askProgress: $('ask-progress'),
+  askProgressTitle: $('ask-progress-title'),
+  askProgressNote: $('ask-progress-note'),
+  askChart: $<HTMLCanvasElement>('ask-chart'),
   indexProgress: $('index-progress'),
   indexProgressTitle: $('index-progress-title'),
   indexProgressNote: $('index-progress-note'),
@@ -1212,16 +1366,19 @@ function drawProgress(canvas: HTMLCanvasElement, points: ProgressPoint[], total:
 }
 
 /**
- * Read an index that arrives as a series of JSON lines.
+ * Read a response that arrives as a series of JSON lines.
  *
- * 🔴 THE DOOR IS THE SAME ONE EVERY OTHER CALL USES. A missing endpoint, a proxy or an edge error
- * page all answer with something that is not JSON, and a bare `response.json()` would turn that
- * into a parser complaint instead of naming what happened — so a line that will not parse is
- * reported in terms of what it actually is.
+ * 🔴 ONE READER, TWO CALLERS — the index and the question. The house rule is that a second
+ * implementation of the same thing is a second chance for the two to disagree, and this one has
+ * already earned its place once: a line that will not parse is reported in terms of what it actually
+ * is, because a proxy or an edge error page answers with HTML and a bare `response.json()` would
+ * turn that into a parser complaint instead of naming what happened.
+ *
+ * `onEvent` is called for every line with a `type`, and the `result` line is returned.
  */
-async function readIndexStream(
+async function readJsonLines(
   response: Response,
-  onProgress: (progress: { stage: string; done: number; total: number; ms: number }) => void
+  onEvent: (event: { type?: string; error?: string } & Record<string, unknown>) => void
 ): Promise<Record<string, unknown>> {
   if (!response.body) throw new Error(`The server answered ${response.status} with no body.`);
 
@@ -1244,9 +1401,9 @@ async function readIndexStream(
           : `The server sent a line this page cannot read: ${trimmed.slice(0, 100)}`
       );
     }
-    if (event.type === 'progress') onProgress(event as { stage: string; done: number; total: number; ms: number });
-    else if (event.type === 'result') result = event;
-    else if (event.type === 'error') failure = event.error ?? 'Indexing failed.';
+    if (event.type === 'result') result = event;
+    else if (event.type === 'error') failure = event.error ?? 'That did not work.';
+    else onEvent(event);
   };
 
   for (;;) {
@@ -1260,8 +1417,27 @@ async function readIndexStream(
   if (buffer.trim().length > 0) handle(buffer);
 
   if (failure) throw new Error(failure);
-  if (!result) throw new Error('The server sent no index for that document.');
+  if (!result) throw new Error('The server sent no result.');
   return result;
+}
+
+/**
+ * Read an index that arrives as a series of JSON lines.
+ *
+ * 🔴 THE DOOR IS THE SAME ONE EVERY OTHER CALL USES. A missing endpoint, a proxy or an edge error
+ * page all answer with something that is not JSON, and a bare `response.json()` would turn that
+ * into a parser complaint instead of naming what happened — so a line that will not parse is
+ * reported in terms of what it actually is.
+ */
+async function readIndexStream(
+  response: Response,
+  onProgress: (progress: { stage: string; done: number; total: number; ms: number }) => void
+): Promise<Record<string, unknown>> {
+  return readJsonLines(response, (event) => {
+    if (event.type === 'progress') {
+      onProgress(event as unknown as { stage: string; done: number; total: number; ms: number });
+    }
+  });
 }
 
 async function indexNow(): Promise<void> {
@@ -1489,22 +1665,94 @@ async function askNow(): Promise<void> {
   el.askButton.innerHTML = '<span class="spinner"></span>Reading';
   const startedAt = performance.now();
 
+  // 🔴 THE CHART IS SHOWN BEFORE THE FIRST BYTE COMES BACK, because the wait is the point of it.
+  const stages: AskStage[] = [];
+  let ticker = 0;
+  el.askProgressTitle.textContent = 'Answering';
+  el.askProgressNote.textContent = 'Searching the notes by meaning and by word.';
+  el.askChart.hidden = false;
+  el.askProgress.hidden = false;
+  const paint = (): void => {
+    drawAskStages(el.askChart, askRows(stages), performance.now() - startedAt);
+  };
+  paint();
+
   try {
-    const response = await fetch('./api/ask', {
+    const response = await fetch('./api/ask/stream', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ docId: current.id, question: el.question.value.trim() }),
     });
-    const body = await readJson<Answer & { error?: string }>(response);
-    if (!response.ok) throw new Error(body.error ?? `The server answered ${response.status}.`);
+    if (!response.ok) throw new Error(`The server answered ${response.status} before it started.`);
+
+    const body = (await readJsonLines(response, (event) => {
+      if (event.type !== 'progress') return;
+      stages.push(event as unknown as AskStage);
+      const running = stages[stages.length - 1] as AskStage;
+      el.askProgressNote.textContent = askStageWords(stages, running);
+      paint();
+      // The running stage has no measurement inside it, so its bar grows against the clock and its
+      // caption counts up — the only true things available while a model is writing.
+      if (running.tookMs === undefined && ticker === 0) {
+        ticker = window.setInterval(paint, 100);
+      }
+      if (running.tookMs !== undefined && ticker !== 0) {
+        window.clearInterval(ticker);
+        ticker = 0;
+      }
+    })) as unknown as Answer & { error?: string };
+
+    if (ticker !== 0) window.clearInterval(ticker);
+    ticker = 0;
     renderAnswer(body);
     markAnswered(performance.now() - startedAt);
+
+    // 🔴 THE CHART STAYS, RENAMED. It is the record of how the answer was built — 40 ms of search
+    // and four seconds of model is worth being able to look at afterwards, and on a fast answer it
+    // would otherwise be gone before it was read. Same as the index chart.
+    el.askProgressTitle.textContent = 'How the answer was built';
+    const timings = (body as { timings?: AnswerTimings }).timings;
+    el.askProgressNote.textContent = timings
+      ? `Searched in ${timings.retrieveMs} ms, and the model took ${(timings.modelMs / 1000).toFixed(1)} s. ` +
+        `The whole question took ${(timings.totalMs / 1000).toFixed(1)} s.`
+      : 'Done.';
+    drawAskStages(el.askChart, askRows(stages), Math.max(...stages.map((stage) => stage.ms), 1));
   } catch (error) {
+    if (ticker !== 0) window.clearInterval(ticker);
+    ticker = 0;
     showError(el.askError, error instanceof Error ? error.message : 'The question failed.');
   } finally {
     el.askButton.disabled = false;
     el.askButton.textContent = 'Ask';
   }
+}
+
+/**
+ * What to say while the answer is being built — the stage, in words, with its numbers.
+ *
+ * A finished stage gets its measured time; the model gets the clock and the words *"still running"*,
+ * because that is all that is true until it returns.
+ */
+function askStageWords(stages: AskStage[], running: AskStage): string {
+  const search = stages.find((stage) => stage.stage === 'search');
+  const found = search?.found ?? 0;
+  const kept = search?.kept ?? 0;
+  if (running.stage === 'search') return 'Searching the notes by meaning and by word.';
+  if (running.stage === 'notes') {
+    if (running.silent) {
+      return 'Nothing in the document matched closely enough, so no model was called.';
+    }
+    return found > 0
+      ? `Found ${plural(found, 'note')} and kept ${kept} of them. Reading them now.`
+      : 'Chose the notes to read.';
+  }
+  if (running.stage === 'model') {
+    const startedAt = running.ms;
+    return running.tookMs === undefined
+      ? `The model is writing the answer — ${((performance.now() - startedAt) / 1000).toFixed(1)} s so far.`
+      : `The model took ${(running.tookMs / 1000).toFixed(1)} s.`;
+  }
+  return 'Working.';
 }
 
 function chips(items: Mention[], unit = ''): string {
