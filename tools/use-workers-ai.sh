@@ -16,6 +16,13 @@
 # on this machine to a file on the droplet over ssh, and appears in no log, no command
 # line and no chat message.
 #
+# 🔴 SUPERSEDED AS THE DEPLOYED PATH, 20 Sep 2026 — KEPT AS THE ALTERNATIVE. The demo now
+# runs through **a Worker with an AI binding** (`worker/`, deployed as `rag-model-proxy`),
+# so it needs no API token at all: an AI binding is a capability of the Worker, not a string
+# anyone has to store. That was built because this script's one action — creating a token by
+# hand — is the one thing nothing here can do. This script still works and is the right tool
+# if a direct token is ever preferred; wire it and the Worker becomes unused.
+#
 #   tools/use-workers-ai.sh --check    # does the token actually work?  (safe, changes nothing)
 #   tools/use-workers-ai.sh            # configure the droplet and verify the live site
 #
@@ -32,6 +39,7 @@ TOKEN_FILE="$HOME/Documents/secrets/.cloudflare_workers_ai_token"
 BASE_URL="https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/ai/v1"
 HOST="dvs-sites"
 APP_DIR="/opt/rag"
+CONTAINER="rag"
 SITE="https://rag-demo.nodejavascript.com"
 
 # An 8B-class model on purpose. The Worker AI free allowance is measured in neurons and a
@@ -120,7 +128,29 @@ echo
 # The key goes over ssh on standard input, so it is never an argument (visible in the
 # process list) and never a local file that a later command might echo.
 ssh "$HOST" "mkdir -p $APP_DIR/secrets && cat > $APP_DIR/secrets/model_key && chmod 600 $APP_DIR/secrets/model_key" <<<"$TOKEN"
-printf '   key written to %s/secrets/model_key (chmod 600)\n' "$APP_DIR"
+
+# 🔴 OWNERSHIP IS PART OF THE KEY, AND THIS WAS PAID FOR ON 20 Sep 2026.
+# Writing the file as root with `chmod 600`, inside a root-owned `secrets/` directory,
+# produces a credential **the container cannot read**: the demo runs as uid 1000, so it
+# cannot even traverse the directory, `readFileSync` throws, `readKey` catches it and
+# returns null — and the site goes on saying *"no model key is configured"* with a 64-byte
+# key sitting right there. The one-token plan would have failed at this last step and
+# blamed the token. So the directory is handed to the uid the container actually runs as,
+# read from the container rather than assumed.
+OWNER="$(ssh "$HOST" "docker exec $CONTAINER id -u 2>/dev/null || echo 1000" | tr -d '[:space:]')"
+GROUP="$(ssh "$HOST" "docker exec $CONTAINER id -g 2>/dev/null || echo 1000" | tr -d '[:space:]')"
+ssh "$HOST" "chown -R $OWNER:$GROUP $APP_DIR/secrets && chmod 700 $APP_DIR/secrets && chmod 600 $APP_DIR/secrets/model_key"
+printf '   key written to %s/secrets/model_key (chmod 600, owned by %s:%s — the uid the container runs as)\n' "$APP_DIR" "$OWNER" "$GROUP"
+
+# The claim is then TESTED rather than assumed, from inside the container, which is the only
+# place the answer matters. A key that exists and cannot be read is indistinguishable from
+# no key at all, and the failure it produces says the wrong thing.
+keybytes="$(ssh "$HOST" "docker exec $CONTAINER sh -lc 'wc -c < /run/secrets/model_key' 2>/dev/null" | tr -d '[:space:]')"
+case "${keybytes:-}" in
+  ''|*[!0-9]*) fail "the container cannot read the key at /run/secrets/model_key. Check that $APP_DIR/secrets is owned by the uid the container runs as." ;;
+  0) fail "the container reads /run/secrets/model_key as EMPTY." ;;
+esac
+printf '   the container reads it: %s bytes\n' "$keybytes"
 
 ssh "$HOST" "python3 - <<'PY'
 import re
