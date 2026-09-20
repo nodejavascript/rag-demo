@@ -649,10 +649,21 @@ const el = {
 
 /* ------------------------------------------------------------------ step 1 */
 
+/** The shortest document the server will index. Kept in step with `MIN_CHARS`. */
+const MIN_CHARS = 200;
+
 function updatePasteStat(): void {
   const text = el.paste.value;
-  el.step2.hidden = text.trim().length < 200;
-  if (text.trim().length === 0) {
+  const length = text.trim().length;
+
+  // 🔴 THE BUTTON IS GATED HERE, AND IT USED TO BE GATED BY A SECTION APPEARING. The button
+  // lived in step 2, and step 2 was itself revealed only once 200 characters had been
+  // pasted — so the length rule was enforced by a button the reader could not see, which is
+  // not an explanation. It now sits beside the box it acts on and is simply **disabled until
+  // there is enough to index**, with the line underneath saying so in words.
+  el.indexButton.disabled = length < MIN_CHARS;
+
+  if (length === 0) {
     el.pasteStat.textContent = 'Nothing pasted yet.';
     return;
   }
@@ -661,7 +672,7 @@ function updatePasteStat(): void {
   el.pasteStat.innerHTML =
     `<b>${text.length.toLocaleString()}</b> characters · <b>${words.toLocaleString()}</b> words · ` +
     `<b>${lines.toLocaleString()}</b> lines` +
-    (text.trim().length < 200 ? ' · <b>too short to index yet</b>' : ' · ready to index');
+    (length < MIN_CHARS ? ' · <b>too short to index yet</b>' : ' · ready to index');
 }
 
 el.paste.addEventListener('input', updatePasteStat);
@@ -784,7 +795,8 @@ function resetToHome(): void {
   el.answer.classList.remove('refused');
 
   // Any button a request in flight may have disabled, or relabelled with a spinner.
-  el.indexButton.disabled = false;
+  // The index button goes back to *unavailable*, because the box it acts on is empty again.
+  el.indexButton.disabled = true;
   el.indexButton.textContent = 'Index it';
   el.askButton.disabled = false;
   el.askButton.textContent = 'Ask';
@@ -895,6 +907,9 @@ async function indexNow(): Promise<void> {
     current = body.document;
     renderShape(body.document, body.timeline);
     useSuggestions(body.kindLabel, body.suggestions);
+    // Step 2 is the READING — the panel that came back — so it appears when there is
+    // something to show, not when enough text has been typed.
+    el.step2.hidden = false;
 
     el.indexStat.textContent = body.reused
       ? 'This exact text was already indexed, so the existing index was reused.'
@@ -914,7 +929,9 @@ async function indexNow(): Promise<void> {
     showError(el.indexError, error instanceof Error ? error.message : 'Indexing failed.');
     el.indexStat.textContent = '';
   } finally {
-    el.indexButton.disabled = false;
+    // Not simply re-enabled: the length rule still applies, so a failed index leaves the button
+    // exactly as available as it was before it was pressed.
+    el.indexButton.disabled = el.paste.value.trim().length < MIN_CHARS;
     el.indexButton.textContent = 'Index it';
   }
 }

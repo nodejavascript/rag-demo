@@ -17,7 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { MentionMonths } from './charts.js';
+import { mentionGrid, type MentionMonths } from './charts.js';
 import { AppError } from './types.js';
 import type { Chunk, DocumentView, Entry, IndexStats, ImageRef, Mention } from './types.js';
 
@@ -273,6 +273,14 @@ export class Store {
     if (!row) return null;
     const stats = JSON.parse(row.stats_json) as IndexStats;
     const mentions = JSON.parse(row.mentions_json || '{}') as DocumentView['mentions'];
+
+    // 🔴 A DOCUMENT INDEXED BEFORE THIS CHART EXISTED HAS NO GRID ON IT. Measured on the live
+    // demo, 20 September 2026: the built-in diary was reused from an index written by the older
+    // build, `mentions.byMonth` was absent from the record, and the heat map silently hid itself
+    // — the chart was built, deployed and correct, and no visitor could see it. The grid is
+    // filled in here with the SAME function the indexer uses, and written back, so it is
+    // computed once per document rather than on every read.
+    const byMonth = mentions.byMonth ?? this.#gridFor(row.id, stats, mentions);
     return {
       id: row.id,
       title: row.title,
@@ -285,10 +293,38 @@ export class Store {
         places: mentions.places ?? [],
         people: mentions.people ?? [],
         amounts: mentions.amounts ?? [],
-        byMonth: mentions.byMonth,
+        byMonth,
       },
       imageCount: row.image_count,
     };
+  }
+
+  /**
+   * The mention grid for a record that was stored without one, written back so it is done once.
+   *
+   * Returns `undefined` when the document has nothing to grid — the page hides the chart in that
+   * case and says why, which is the honest outcome rather than an empty axis.
+   */
+  #gridFor(
+    id: string,
+    stats: IndexStats,
+    mentions: DocumentView['mentions']
+  ): MentionMonths | undefined {
+    const entries = this.entries(id);
+    const chunks = this.allChunks(id);
+    if (entries.length === 0 || chunks.length === 0) return undefined;
+
+    const byMonth = mentionGrid(chunks, stats, entries, {
+      people: mentions.people ?? [],
+      places: mentions.places ?? [],
+      amounts: mentions.amounts ?? [],
+    });
+    if (!byMonth) return undefined;
+
+    this.db
+      .prepare('UPDATE documents SET mentions_json = ? WHERE id = ?')
+      .run(JSON.stringify({ ...mentions, byMonth }), id);
+    return byMonth;
   }
 
   /** The whole document as it was indexed, for the counts taken over all of it. */

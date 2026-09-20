@@ -176,22 +176,35 @@ It works best when the document has its own structure: dates on their own line, 
             <input type="file" id="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
             <span class="grow"></span>
           </div>
+
+          <!-- 🔴 THE BUTTON LIVES WITH THE BOX IT ACTS ON — George, 20 Sep 2026: "the index
+               it is too far away. maybe it should be part of step 1". It used to sit in the
+               next section, so a reader pasted a document and then had to go looking for the
+               button below the fold. The thing that acts on a box belongs beside the box. -->
+          <p class="hint" id="index-hint">
+            Indexing splits the document into entries, works out its dates, finds the places, people,
+            amounts and pictures, and embeds every note so it can be searched by meaning.
+          </p>
+          <div class="row">
+            <button type="button" id="index" class="primary" disabled>Index it</button>
+            <span class="statline" id="index-stat"></span>
+          </div>
+          <div id="index-error"></div>
+
           <p class="statline" id="paste-stat">Nothing pasted yet.</p>
           <div id="health"></div>
         </section>
 
         <!-- ============ 2 ============ -->
         <section class="step" id="step-2" hidden>
-          <div class="step-head"><div class="step-n">2</div><h2>Index it</h2></div>
-          <p class="hint" id="index-hint">
-            This splits the document into entries, works out its dates, finds the places, people, amounts
-            and pictures, and embeds every note so it can be searched by meaning.
+          <!-- "Index it" was the name of this step, and it stopped being true once the button
+               moved into step 1: pressing it is something the reader does, and this panel is
+               what came back. It now says what it shows. -->
+          <div class="step-head"><div class="step-n">2</div><h2>What it read</h2></div>
+          <p class="hint">
+            What the index made of the document — every figure below counted in code, over the whole of
+            it, never guessed by the model.
           </p>
-          <div class="row">
-            <button type="button" id="index" class="primary">Index it</button>
-            <span class="statline" id="index-stat"></span>
-          </div>
-          <div id="index-error"></div>
 
           <div id="shape" hidden>
             <div class="row tight"><span class="statline" id="shape-title"></span></div>

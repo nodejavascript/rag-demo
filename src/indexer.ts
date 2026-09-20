@@ -17,7 +17,7 @@ import { build } from './chunk.js';
 import { guessTitle, prepare } from './text.js';
 import { newDocumentId, nowIso, Store, type DocumentRecord } from './store.js';
 import { AppError, type DocumentView, type IndexStats } from './types.js';
-import { buildMentionMonths, continuousMonths } from './charts.js';
+import { mentionGrid } from './charts.js';
 import type { Model } from './model.js';
 
 /** Shortest paste worth indexing, and the longest one accepted. */
@@ -139,25 +139,18 @@ export async function indexDocument(
     expiresAt,
     stats,
     // The mention grid is built here, at index time, from the notes the indexer itself
-    // extracted — never recomputed later by a second implementation that could disagree
-    // with the tally beside it on the same page. Only the top few are kept: a heat map is
-    // for the things that recur, and eight rows is all a chart can show.
+    // extracted — never re-derived by a second implementation that could disagree with the
+    // tally printed beside it on the same page. `mentionGrid` IS that one implementation: the
+    // store calls it too, to fill in a document indexed before this chart existed.
     mentions: {
       places: built.places,
       people: built.people,
       amounts: built.amounts,
-      byMonth: buildMentionMonths(
-        built.chunks,
-        continuousMonths(built.stats.perMonth, built.stats.firstDate, built.stats.lastDate).map(
-          (point) => point.month
-        ),
-        built.entries,
-        [
-          ...built.people.slice(0, 3).map((mention) => ({ value: mention.value, kind: 'person' as const })),
-          ...built.places.slice(0, 3).map((mention) => ({ value: mention.value, kind: 'place' as const })),
-          ...built.amounts.slice(0, 2).map((mention) => ({ value: mention.value, kind: 'amount' as const })),
-        ]
-      ),
+      byMonth: mentionGrid(built.chunks, built.stats, built.entries, {
+        people: built.people,
+        places: built.places,
+        amounts: built.amounts,
+      }),
     },
     imageCount: built.images.length,
     entries: built.stats.entries,

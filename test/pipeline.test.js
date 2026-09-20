@@ -13,6 +13,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { DatabaseSync } from 'node:sqlite';
+
 import { build } from '../dist/chunk.js';
 import { SAMPLES } from '../dist/samples.js';
 import { Model } from '../dist/model.js';
@@ -542,4 +544,77 @@ test('a grounded answer that merely mentions the refusal words is not a refusal'
   // away and the reader is told the document is silent when it was not.
   assert.equal(isRefusal("The document doesn't say when the boiler was fixed, but it was cold on 4 March."), true, 'the refusal still leads');
   assert.equal(isRefusal('It was cold on 4 March, and the diary does not say why.'), false, 'the phrase is not the answer');
+});
+
+/* --------------------------------------------------------------- the grid */
+
+test('a document indexed before the heat map existed still gets one', async () => {
+  // 🔴 THE FAULT THIS GUARDS, measured on the live demo on 20 September 2026. The built-in diary
+  // came back `reused: true` from an index written by the older build, `mentions.byMonth` was
+  // absent from the record, and the heat map therefore hid itself. The chart was written, tested,
+  // deployed and correct — and no visitor could ever have seen it.
+  //
+  // So what is asserted is not "the grid is right when the indexer builds it" (the chart tests
+  // cover that). It is: **a record that never had a grid gets one on read, and it agrees with the
+  // one the indexer would have built.**
+  const { dir, store, close } = scratch();
+  try {
+    const model = stubModel();
+    const { document } = await indexDocument(store, model, { text: diary });
+    const fresh = store.getDocument(document.id).mentions.byMonth;
+    assert.ok(fresh && fresh.series.length > 0, 'a freshly indexed document has no grid at all');
+
+    // Put the row back the way the old build left it: tallies present, no grid.
+    const db = new DatabaseSync(join(dir, 'test.db'));
+    const row = db.prepare('SELECT mentions_json AS j FROM documents WHERE id = ?').get(document.id);
+    const stripped = JSON.parse(row.j);
+    delete stripped.byMonth;
+    db.prepare('UPDATE documents SET mentions_json = ? WHERE id = ?').run(
+      JSON.stringify(stripped),
+      document.id
+    );
+    db.close();
+
+    const filled = store.getDocument(document.id).mentions.byMonth;
+    assert.deepEqual(
+      filled,
+      fresh,
+      'the grid filled in on read disagrees with the one the indexer built'
+    );
+
+    // And it is written back, so the work is done once rather than on every read.
+    const check = new DatabaseSync(join(dir, 'test.db'));
+    const kept = JSON.parse(
+      check.prepare('SELECT mentions_json AS j FROM documents WHERE id = ?').get(document.id).j
+    );
+    check.close();
+    assert.deepEqual(kept.byMonth, fresh, 'the filled-in grid was not written back to the record');
+  } finally {
+    close();
+  }
+});
+
+test('and a document with nothing to grid gets no grid, rather than an empty axis', async () => {
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    // Undated and nameless: no months, no people, no places, no amounts.
+    const text = [
+      'Some notes about the thing, and a little more of the same, and then a third line so the',
+      'document is long enough to index at all. Nothing here is dated, nothing is named, and',
+      'nothing is bought, which is exactly the case the chart has to decline.',
+      'It goes on for a while so that the length rule is satisfied and the text is real prose.',
+      'A fourth line, and a fifth, and a sixth, so there is something to read.',
+      'A seventh line. An eighth line. A ninth line, which is enough.',
+    ].join('\n');
+    const { document } = await indexDocument(store, model, { text });
+    assert.equal(document.stats.months, 0, 'the fixture is meant to have no months');
+    assert.equal(
+      store.getDocument(document.id).mentions.byMonth,
+      undefined,
+      'a chart was produced for a document with nothing to put on it'
+    );
+  } finally {
+    close();
+  }
 });

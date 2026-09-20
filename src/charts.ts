@@ -98,6 +98,63 @@ export function buildMentionMonths(
   };
 }
 
+/** How many rows the grid keeps: the things that recur, and as many as a chart can show. */
+export const GRID_ROWS = { people: 3, places: 3, amounts: 2 } as const;
+
+/**
+ * The grid's rows, taken from the tally that is printed beside it.
+ *
+ * The chart and the tally must never disagree — a reader sees both at once — so the rows are
+ * derived from the same list the tally was counted from, never re-extracted from the text.
+ */
+export function gridRows(mentions: {
+  people: readonly { value: string }[];
+  places: readonly { value: string }[];
+  amounts: readonly { value: string }[];
+}): { value: string; kind: 'person' | 'place' | 'amount' }[] {
+  return [
+    ...mentions.people.slice(0, GRID_ROWS.people).map((m) => ({ value: m.value, kind: 'person' as const })),
+    ...mentions.places.slice(0, GRID_ROWS.places).map((m) => ({ value: m.value, kind: 'place' as const })),
+    ...mentions.amounts.slice(0, GRID_ROWS.amounts).map((m) => ({ value: m.value, kind: 'amount' as const })),
+  ];
+}
+
+/**
+ * The whole mention grid for a document, from the notes, the months and the tally it has.
+ *
+ * 🔴 ONE IMPLEMENTATION, CALLED FROM TWO PLACES ON PURPOSE. The indexer calls it when a document
+ * is first read; the store calls it to fill in a document that was indexed before this chart
+ * existed. That second call is not tidiness — it is the fix for a fault measured on the live
+ * demo on 20 September 2026: the built-in diary came back `reused: true` from an index written by
+ * the older build, `mentions.byMonth` was simply absent from the record, and the heat map
+ * therefore hid itself. The feature existed, the code was right, and no visitor could ever have
+ * seen it. Had the store grown its own second copy of this logic, the two could have disagreed
+ * about the same document — so it does not: it calls this.
+ */
+export function mentionGrid(
+  chunks: Parameters<typeof buildMentionMonths>[0],
+  stats: { perMonth: MonthPoint[]; firstDate: string | null; lastDate: string | null },
+  entries: Parameters<typeof buildMentionMonths>[2],
+  mentions: {
+    people: readonly { value: string }[];
+    places: readonly { value: string }[];
+    amounts: readonly { value: string }[];
+  }
+): MentionMonths | undefined {
+  const grid = buildMentionMonths(
+    chunks,
+    continuousMonths(stats.perMonth, stats.firstDate, stats.lastDate).map((point) => point.month),
+    entries,
+    gridRows(mentions)
+  );
+  // 🔴 NOTHING TO GRID IS `undefined`, NOT AN EMPTY GRID. The indexer stores this value and the
+  // store fills it in for older records; if one wrote `{months: [], series: []}` and the other
+  // wrote nothing, the same document would have two different shapes depending only on which
+  // build read it — and a test on the fresh path would pass while the backfilled path disagreed.
+  // Caught by exactly that test, on the first run.
+  return grid.series.length === 0 ? undefined : grid;
+}
+
 /** One stage of the search, and how many notes were still in play. */
 export interface FunnelStage {
   label: string;
