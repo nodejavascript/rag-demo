@@ -32,22 +32,27 @@ export interface AnswerOptions {
 /**
  * How much sampling an answer gets.
  *
- * 🔴 THIS IS NOT ZERO, AND IT WAS ZERO UNTIL 20 Sep 2026 — George: *"instead of sounding
- * robotic, and it expand on what it outputs."* Greedy decoding takes the shortest path
- * through the safest words, so every question touching several notes came back in the
- * same construction: *"cold on 4 March 2026, and rain on 18 March 2026, and frost on 26
- * March 2026"* — correct, and reading like a form being filled in.
+ * 🔴 **ZERO — RAISED TO 0.3 ON 20 Sep 2026 AND PUT BACK THE SAME DAY, AND THE REASON IS NOT
+ * THE ONE IT LOOKS LIKE.** George asked for answers that stop sounding robotic and expand
+ * on what they output. Greedy decoding *was* part of why they read like a form — every
+ * multi-note question came back as *"cold on 4 March 2026, and rain on 18 March 2026, and
+ * frost on 26 March 2026"* — so sampling went up, and the prose did improve.
  *
- * **It is kept LOW on purpose.** The rules that matter most here — a date claimed only
- * when the day, the month and the year were all written, a proper name copied exactly as
- * the document writes it, a refusal when the notes are silent — are precisely the ones
- * sampling could loosen. So this is the smallest value that improved the prose, and
- * `npm run eval` plus the live questions are what decide whether it cost anything. The
- * plumbing for it was already here: the option above existed with the comment *"raise the
- * sampling away from 0 when the words matter more than the repeatability"*, and nobody had
- * ever called it.
+ * **Then the diary's weather question came back with a fact that is not in the diary:**
+ * *"cold on 4 March and 22 March … the weather got cold again on 22 March"*. The 22 March
+ * entry is about a cottage and a deposit and says nothing about weather. So the sampling
+ * went back to 0 — **and the measurement that matters is that at 0 the invented day was
+ * STILL THERE.** Sampling was not what caused it. The cause was the prompt, in rules 13 and
+ * 14, which asked for surrounding detail and for notes to be joined into sentences, and so
+ * pulled a neighbouring entry into a sentence about the weather. **Those rules were reverted
+ * rather than reworded:** two attempts to keep the longer answer while forbidding the fault
+ * both still produced it, so the rules are gone and the prompt is byte-for-byte the one that
+ * answered correctly.
+ *
+ * Sampling stays at 0 on its own merits: it bought prose the prompt now produces anyway,
+ * and this site's whole promise is that an answer can be checked against the document.
  */
-export const DEFAULT_TEMPERATURE = 0.3;
+export const DEFAULT_TEMPERATURE = 0;
 
 function sourceOf(scored: Scored): Source {
   return {

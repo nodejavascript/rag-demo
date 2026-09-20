@@ -524,5 +524,22 @@ test('isNothingFurther accepts every form the empty second half arrives in', () 
   assert.equal(isNothingFurther(null), true, 'no second half at all');
   assert.equal(isNothingFurther('Nothing further.'), true);
   assert.equal(isNothingFurther('  nothing further  '), true, 'however it is spaced or cased');
+  assert.equal(isNothingFurther('Read together, the notes suggest nothing further.'), true, 'the form the model wrote');
   assert.equal(isNothingFurther('Read together, the notes suggest a wet month.'), false);
+});
+
+test('a refusal is still a refusal when the model invents a heading above it', () => {
+  // 🔴 MEASURED LIVE, 20 Sep 2026. Asked something the diary does not answer, the model
+  // wrote its OWN heading — "WHAT THE DOCUMENT DOESN'T SAY" — above the refusal. The check
+  // read line one, saw a heading, and called the reply **grounded**; the refusal never
+  // reached the refusal path, which is the one path this app is built around.
+  assert.equal(isRefusal("WHAT THE DOCUMENT DOESN'T SAY\nThe document doesn't say."), true);
+  assert.equal(isRefusal("WHAT THE DOCUMENT DOESN'T SAY\nThe document doesn't say.\n\nWHAT IT SUGGESTS Nothing further."), true);
+});
+
+test('a grounded answer that merely mentions the refusal words is not a refusal', () => {
+  // The other half of the same rule. This must stay strict, or a real answer gets thrown
+  // away and the reader is told the document is silent when it was not.
+  assert.equal(isRefusal("The document doesn't say when the boiler was fixed, but it was cold on 4 March."), true, 'the refusal still leads');
+  assert.equal(isRefusal('It was cold on 4 March, and the diary does not say why.'), false, 'the phrase is not the answer');
 });

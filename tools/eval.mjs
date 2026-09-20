@@ -92,8 +92,16 @@ const CASES = [
     // excludes 3 and 4, so the intent was never in doubt: **the answer must be two.** A
     // check that cannot see a correct answer is worse than no check, because it teaches
     // the reader to ignore the score. Found 2026-09-19 against Workers AI.
+    //
+    // 🔴 AND IT FAILED AGAIN ON 2026-09-20, FOR THE OTHER REASON. The answer became a
+    // paragraph that names the days — "…first on 4 March 2026 and last on 2 April 2026" —
+    // and `mustNot: [/3|three|4|four/i]` fired on the **4 in a date**, not on a count. The
+    // count in that answer was right. A bare digit is not evidence of anything here: the
+    // question is whether the model stated the wrong NUMBER, so the forbidden words only
+    // count **next to the thing being counted**. The two directions are both asserted
+    // below the case list, so this cannot silently become a check that never fires.
     must: [/twice|\b2\b|\btwo\b/i],
-    mustNot: [/3|three|4|four/i],
+    mustNot: [/\b(?:3|three|4|four)\s*(?:times|entries|mentions|occurrences)\b/i],
     why: 'the count must come from code over the whole document, never from the model',
   },
   {
@@ -111,6 +119,45 @@ const CASES = [
     why: 'the present role must outrank a twenty-year history, so the timeline has to be read',
   },
 ];
+
+/* ------------------------------------------------------------------ the checks themselves */
+
+/**
+ * 🔴 A CHECK MUST BE ABLE TO FAIL, AND IT MUST ALSO BE ABLE TO PASS.
+ *
+ * The count case above has now been wrong in **both** directions. It first could not see
+ * the correct word *twice*, and then — 20 Sep 2026 — it fired on the **4 inside "4 March
+ * 2026"**, calling a right answer wrong. Each time the score said something about the
+ * checks rather than about the answers.
+ *
+ * So both directions are asserted here, against the case's own patterns, before a single
+ * model call is made. If either stops holding this exits, rather than printing a score
+ * nobody should trust.
+ */
+{
+  const countCase = CASES.find((entry) => entry.question === 'How many times is the boiler mentioned?');
+  const allowed = countCase?.must?.[0];
+  const forbidden = countCase?.mustNot?.[0];
+  if (!allowed || !forbidden) {
+    console.error('The count case no longer carries both a `must` and a `mustNot`.');
+    process.exit(2);
+  }
+  // The answer that was actually returned, verbatim, including its dates.
+  const correct = '"boiler" 2 times, in 2 entries, first on 4 March 2026 and last on 2 April 2026.';
+  const wrongCount = 'The boiler is mentioned 4 times, in 4 entries.';
+  if (!allowed.test(correct)) {
+    console.error('The count check cannot see a CORRECT answer.');
+    process.exit(2);
+  }
+  if (forbidden.test(correct)) {
+    console.error('The count check fires on a CORRECT answer — a digit in a date is not a count.');
+    process.exit(2);
+  }
+  if (!forbidden.test(wrongCount)) {
+    console.error('The count check does not fire on a WRONG count — it checks nothing.');
+    process.exit(2);
+  }
+}
 
 /** The resume fixture, redacted only of an e-mail address and a phone number. */
 function resumeText() {
