@@ -308,6 +308,22 @@ input:focus { border-color: var(--accent-2); }
 /* The spine sits inside the answer panel, so it needs the gap the grid gives elsewhere. */
 .answer-wrap .chart-box { margin-top: 14px; }
 
+/* 🔴 WHAT THE DOCUMENT WAS TAKEN FOR. The kind is the one judgement on this page the reader
+   did not make, so it is the one thing that has to be conspicuous enough to be argued with. */
+.kind-badge {
+  display: inline-block;
+  padding: 1px 9px 2px;
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.16);
+  border: 1px solid rgba(94, 234, 212, 0.45);
+  color: #5eead4;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* The heat map and the funnel are full width under the two-column chart grid. */
+#heat-box, #funnel-box { margin-top: 14px; }
+
 /* ---------- answer ---------- */
 
 .answer-wrap { margin: 0 0 18px; }

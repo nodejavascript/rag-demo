@@ -191,7 +191,7 @@ export interface ConflictReport {
   ambiguous: { label: string; raw: string }[];
 }
 
-import type { Spine } from './charts.js';
+import type { FunnelStage, MentionMonths, Spine } from './charts.js';
 
 export interface Answer {
   question: string;
@@ -218,6 +218,12 @@ export interface Answer {
    * in code from the entries and the notes that were actually retrieved. See `charts.ts`.
    */
   spine: Spine;
+  /**
+   * How the whole document became the handful of notes the model was shown — each number
+   * counted by the stage that produced it, and a stage that did not run left out rather
+   * than drawn as a zero. See `buildFunnel`.
+   */
+  funnel: FunnelStage[];
   /** Facts counted in code over the whole document. */
   computed: ComputedFact[];
   /** How long each stage took, in milliseconds. */
@@ -242,7 +248,17 @@ export interface DocumentView {
    * implementation of a count is a second chance for the two to disagree — and the
    * reader would have no way to tell which of them was wrong.
    */
-  mentions: { places: Mention[]; people: Mention[]; amounts: Mention[] };
+  mentions: {
+    places: Mention[];
+    people: Mention[];
+    amounts: Mention[];
+    /**
+     * Who and what appears WHEN — the same mentions, laid out over the document's own
+     * months, counted at index time by the code that produced the tally above. See
+     * `buildMentionMonths`. Absent on a document indexed before this existed.
+     */
+    byMonth?: MentionMonths;
+  };
   /** How many pictures the document pointed at. */
   imageCount: number;
 }

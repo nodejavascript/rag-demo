@@ -52,6 +52,11 @@ export interface RetrieveResult {
   warnings: string[];
   retrieveMs: number;
   rerankMs: number;
+  /** How many notes the two searches proposed between them, before any cut. */
+  ranked: number;
+  /** How many the reranker actually scored — **undefined when no reranker ran at all**,
+   * because a stage that never happened must not be drawn as a stage that found nothing. */
+  reranked: number | undefined;
 }
 
 /**
@@ -159,7 +164,7 @@ export async function retrieve(
   const retrieveMs = Date.now() - started;
 
   if (silent) {
-    return { question, scored: [], bestVector, silent: true, warnings, retrieveMs, rerankMs: 0 };
+    return { question, scored: [], bestVector, silent: true, warnings, retrieveMs, rerankMs: 0, ranked: 0, reranked: undefined };
   }
 
   const candidates = ranked.slice(0, options.useRerank ? RERANK_IN : FINAL_NOTES);
@@ -215,5 +220,5 @@ export async function retrieve(
     }
   }
 
-  return { question, scored, bestVector, silent: false, warnings, retrieveMs, rerankMs };
+  return { question, scored, bestVector, silent: false, warnings, retrieveMs, rerankMs, ranked: ranked.length, reranked: rerankScores ? candidates.length : undefined };
 }

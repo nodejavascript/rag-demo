@@ -31,6 +31,126 @@ export interface Spine {
   total: number;
 }
 
+/** The column that holds everything with no month written. */
+export const UNDATED = 'undated';
+
+export interface MentionMonths {
+  /**
+   * The x-axis: the months the document covers, and `undated` last when some of what is
+   * mentioned sits in an entry that writes no month at all.
+   */
+  months: string[];
+  series: { name: string; kind: 'person' | 'place' | 'amount'; counts: number[] }[];
+}
+
+/**
+ * Who and what appears WHEN — the mentions of the whole document laid out over its months.
+ *
+ * 🔴 **COUNTED HERE, AT INDEX TIME, BY THE SAME CODE THAT PRODUCED THE TALLY.** A second
+ * implementation of "how often is Grimsby mentioned" is a second chance for the two numbers
+ * on the same page to disagree, and a reader has no way to tell which of them is wrong. So
+ * this is built from the notes the indexer already extracted and stored with the document,
+ * and the page only shades the cells.
+ *
+ * A cell counts **the notes in that month that mention it** — one per note, not one per
+ * word — which is the same unit as the composition chart, so the two never contradict each
+ * other. 🔴 A mention attached to an entry with no month goes in the `undated` column rather
+ * than being dropped or given a month it was never written in.
+ */
+export function buildMentionMonths(
+  chunks: { entryIndex: number; people: string[]; places: string[]; amounts: string[] }[],
+  months: string[],
+  entries: { month: string | null }[],
+  top: { value: string; kind: 'person' | 'place' | 'amount' }[]
+): MentionMonths {
+  if (top.length === 0 || chunks.length === 0) return { months: [], series: [] };
+
+  const column = new Map<string, number>(months.map((month, at) => [month, at]));
+  const undatedAt = months.length;
+  const counts = top.map(() => new Array<number>(months.length + 1).fill(0));
+
+  for (const chunk of chunks) {
+    const month = entries[chunk.entryIndex]?.month ?? null;
+    const at = month !== null && column.has(month) ? (column.get(month) as number) : undatedAt;
+    top.forEach((mention, row) => {
+      const named =
+        mention.kind === 'person'
+          ? chunk.people
+          : mention.kind === 'place'
+            ? chunk.places
+            : chunk.amounts;
+      if (named.some((value) => value.toLowerCase() === mention.value.toLowerCase())) {
+        const target = counts[row];
+        if (target) target[at] = (target[at] ?? 0) + 1;
+      }
+    });
+  }
+
+  // The undated column is only in the axis when something actually landed in it.
+  const usedUndated = counts.some((row) => (row[undatedAt] ?? 0) > 0);
+  return {
+    months: usedUndated ? [...months, UNDATED] : [...months],
+    series: top.map((mention, row) => ({
+      name: mention.value,
+      kind: mention.kind,
+      counts: (counts[row] ?? []).slice(0, usedUndated ? months.length + 1 : months.length),
+    })),
+  };
+}
+
+/** One stage of the search, and how many notes were still in play. */
+export interface FunnelStage {
+  label: string;
+  notes: number;
+  /** What happened at this stage, in the reader's words. */
+  note: string;
+}
+
+/**
+ * How the document became the handful of notes the model was shown.
+ *
+ * ⚠️ **THIS IS A FUNNEL OF WHAT WAS MEASURED, NOT A MODEL OF THE SEARCH.** Each number comes
+ * from a stage that counted itself while it ran; nothing is inferred. When a stage did not
+ * run — there is no reranker configured; the refusal was decided before any note was chosen
+ * — the stage is not drawn at all rather than drawn with a zero in it, because a zero and a
+ * stage that never happened look the same on a chart and mean opposite things.
+ */
+export function buildFunnel(stages: {
+  notes: number;
+  ranked?: number;
+  reranked?: number;
+  shown: number;
+  silent?: boolean;
+}): FunnelStage[] {
+  const out: FunnelStage[] = [
+    { label: 'in the document', notes: stages.notes, note: 'every note the indexer made' },
+  ];
+  if (stages.silent) {
+    out.push({
+      label: 'matched the question',
+      notes: 0,
+      note: 'nothing came close enough, so no model was called',
+    });
+    return out;
+  }
+  if (stages.ranked !== undefined) {
+    out.push({
+      label: 'ranked by both searches',
+      notes: stages.ranked,
+      note: 'the keyword search and the meaning search, fused by rank',
+    });
+  }
+  if (stages.reranked !== undefined) {
+    out.push({
+      label: 'weighed by the reranker',
+      notes: stages.reranked,
+      note: 'read again, slowly, by a cross-encoder',
+    });
+  }
+  out.push({ label: 'shown to the model', notes: stages.shown, note: 'what the answer was written from' });
+  return out;
+}
+
 /** `YYYY-MM` from anything the document writes a date as, or null. */
 function monthOf(value: string | null | undefined): string | null {
   const hit = /^(\d{4})-(\d{2})/.exec(value ?? '');

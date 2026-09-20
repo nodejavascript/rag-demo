@@ -14,7 +14,7 @@
  */
 
 import { tally } from './enrich.js';
-import { buildSpine, type Spine } from './charts.js';
+import { buildFunnel, buildSpine, type Spine } from './charts.js';
 import { buildMessages, isNothingFurther, isRefusal, readShape } from './prompt.js';
 import { retrieve, type RetrieveOptions } from './retrieve.js';
 import { factsFor } from './stats.js';
@@ -189,6 +189,7 @@ export async function answer(
       },
       computed: [],
       spine: spineOf(entries, []),
+      funnel: buildFunnel({ notes: document.stats.chunks, shown: 0, silent: true }),
       timings: {
         retrieveMs: retrieval.retrieveMs,
         rerankMs: 0,
@@ -250,6 +251,12 @@ export async function answer(
       entries,
       retrieval.scored.map((item) => item.chunk.entryIndex)
     ),
+    funnel: buildFunnel({
+      notes: document.stats.chunks,
+      ranked: retrieval.ranked,
+      reranked: retrieval.reranked,
+      shown: retrieval.scored.length,
+    }),
     timings: {
       retrieveMs: retrieval.retrieveMs,
       rerankMs: retrieval.rerankMs,

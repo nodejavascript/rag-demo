@@ -53,7 +53,7 @@ interface DocumentView {
   createdAt: string;
   expiresAt: string | null;
   stats: IndexStats;
-  mentions: { places: Mention[]; people: Mention[]; amounts: Mention[] };
+  mentions: { places: Mention[]; people: Mention[]; amounts: Mention[]; byMonth?: MentionMonths };
   imageCount: number;
 }
 
@@ -93,6 +93,8 @@ interface Answer {
   sources: Source[];
   /** The document as a row of cells, with the entries the answer used marked. */
   spine?: Spine;
+  /** How the document became the notes the model was shown, stage by stage. */
+  funnel?: { label: string; notes: number; note: string }[];
   /** What the document does NOT say — counted in code, never generated. See `gaps.ts`. */
   gaps: {
     absent: string[];
@@ -433,11 +435,145 @@ function renderSpine(spine: Spine | undefined): void {
   drawSpine(el.spine, spine);
 }
 
+/**
+ * Who and what appears when — the document's mentions laid out over its own months.
+ *
+ * A heat map rather than a line chart, deliberately: these are counts of NOTES, they are
+ * small integers, and eight rows of them cross each other constantly. Shading says "more
+ * here" without pretending that the space between two cells means anything.
+ */
+function drawHeat(canvas: HTMLCanvasElement, grid: MentionMonths): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+  const rows = grid.series.length;
+  const cols = grid.months.length;
+  if (rows === 0 || cols === 0) return;
+
+  const labelW = Math.min(118, Math.max(70, w * 0.3));
+  const pad = { top: 6, bottom: 20 };
+  const plotW = Math.max(20, w - labelW - 6);
+  const rowH = Math.min(22, Math.max(11, (h - pad.top - pad.bottom) / rows));
+  const cellW = plotW / cols;
+  const max = Math.max(1, ...grid.series.flatMap((row) => row.counts));
+
+  grid.series.forEach((row, at) => {
+    const y = pad.top + at * rowH;
+    ctx.fillStyle = '#b2d3d8';
+    ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(row.name.length > 18 ? `${row.name.slice(0, 17)}\u2026` : row.name, 0, y + rowH / 2);
+
+    row.counts.forEach((count, col) => {
+      const x = labelW + col * cellW;
+      const shade = count === 0 ? 0 : 0.16 + 0.84 * (count / max);
+      ctx.fillStyle = count === 0 ? '#12262c' : `rgba(94, 234, 212, ${shade.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, y + 1.5, Math.max(2, cellW - 2), Math.max(4, rowH - 3), 3);
+      ctx.fill();
+      if (count > 0 && cellW > 24) {
+        ctx.fillStyle = shade > 0.6 ? '#04221f' : '#9fd8d0';
+        ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(count), x + cellW / 2, y + rowH / 2);
+        ctx.textAlign = 'left';
+      }
+    });
+  });
+  ctx.textBaseline = 'alphabetic';
+
+  const every = Math.max(1, Math.ceil(cols / Math.max(1, Math.floor(plotW / 34))));
+  ctx.fillStyle = '#7ba1a8';
+  ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
+  grid.months.forEach((month, at) => {
+    if (at % every !== 0 && at !== cols - 1) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.fillText(month === 'undated' ? 'no month' : month.slice(2), labelW + at * cellW + cellW / 2, h - 5);
+    ctx.restore();
+  });
+}
+
+/** The caption the heat map needs: what a row is, what a column is, what the shading is. */
+function renderHeat(grid: MentionMonths | undefined): void {
+  if (!grid || grid.series.length === 0 || grid.months.length === 0) {
+    el.heatBox.hidden = true;
+    return;
+  }
+  el.heatBox.hidden = false;
+  el.heatNote.textContent =
+    'Each row is one of the things this document mentions most and each column is a month, ' +
+    'so a brighter cell means more notes in that month mention it. Only the notes are counted, ' +
+    'never the words, and never by the model.';
+  drawHeat(el.heat, grid);
+}
+
+/**
+ * How the document became the notes the model was shown.
+ *
+ * The bars narrow because the search does, and the number beside each is the count the stage
+ * itself reported. A stage that never ran is not in the list at all — a reranker that was
+ * never configured must not appear as a stage that found nothing.
+ */
+function drawFunnel(canvas: HTMLCanvasElement, stages: { label: string; notes: number }[]): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+
+  const labelW = Math.min(158, Math.max(96, w * 0.34));
+  const valueW = 46;
+  const plotW = Math.max(20, w - labelW - valueW - 8);
+  const rowH = Math.min(27, Math.max(15, (h - 8) / stages.length));
+  const max = Math.max(...stages.map((stage) => stage.notes), 1);
+
+  stages.forEach((stage, at) => {
+    const y = 4 + at * rowH;
+    const barH = Math.max(7, rowH - 9);
+    const barW = stage.notes === 0 ? 2 : Math.max(3, (stage.notes / max) * plotW);
+
+    ctx.fillStyle = '#b2d3d8';
+    ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(stage.label.length > 24 ? `${stage.label.slice(0, 23)}\u2026` : stage.label, 0, y + rowH / 2);
+
+    ctx.fillStyle = '#112d33';
+    ctx.beginPath();
+    ctx.roundRect(labelW, y + 4, plotW, barH, barH / 2);
+    ctx.fill();
+
+    // The colour fades down the funnel, so the narrowing is legible even in the last bar.
+    const alpha = 1 - (at / Math.max(1, stages.length - 1)) * 0.55;
+    ctx.fillStyle = `rgba(94, 234, 212, ${alpha.toFixed(2)})`;
+    ctx.beginPath();
+    ctx.roundRect(labelW, y + 4, barW, barH, barH / 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#e6f6f8';
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText(String(stage.notes), labelW + plotW + 6, y + rowH / 2);
+  });
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** The funnel, or nothing at all when there is only one stage to draw. */
+function renderFunnel(stages: Answer['funnel']): void {
+  if (!stages || stages.length < 2) {
+    el.funnelBox.hidden = true;
+    return;
+  }
+  el.funnelBox.hidden = false;
+  drawFunnel(el.funnel, stages);
+}
+
 /* ------------------------------------------------------------------ state */
 
 let current: DocumentView | null = null;
 
-/**
+/** Who and what the document mentions, laid out over its own months. */
+interface MentionMonths {
+  months: string[];
+  series: { name: string; kind: 'person' | 'place' | 'amount'; counts: number[] }[];
+}/**
  * The questions offered under the box.
  *
  * 🔴 **THEY FOLLOW THE DOCUMENT, AND THEY DID NOT BEFORE.** The five that stood here were
@@ -463,7 +599,6 @@ let suggestions: string[] = [...BEFORE_INDEXING];
 
 const el = {
   paste: $<HTMLTextAreaElement>('paste'),
-  year: $<HTMLInputElement>('year'),
   pasteStat: $('paste-stat'),
   step2: $('step-2'),
   step3: $('step-3'),
@@ -487,6 +622,12 @@ const el = {
   spineBox: $('spine-box'),
   spine: $<HTMLCanvasElement>('spine'),
   spineNote: $('spine-note'),
+  heat: $<HTMLCanvasElement>('heat'),
+  heatNote: $('heat-note'),
+  heatBox: $('heat-box'),
+  funnelBox: $('funnel-box'),
+  funnel: $<HTMLCanvasElement>('funnel'),
+  funnelNote: $('funnel-note'),
   answerWrap: $('answer-wrap'),
   answer: $('answer'),
   answerQ: $('answer-q'),
@@ -596,6 +737,8 @@ function resetToHome(): void {
   if (el.suggestHint) el.suggestHint.textContent = '';
   if (el.suggestions) renderSuggestions();
   if (el.spineBox) el.spineBox.hidden = true;
+  if (el.heatBox) el.heatBox.hidden = true;
+  if (el.funnelBox) el.funnelBox.hidden = true;
 
   // The steps that only exist while a document does.
   el.step2.hidden = true;
@@ -610,9 +753,6 @@ function resetToHome(): void {
   // The input side.
   el.paste.value = '';
   el.question.value = '';
-  el.year.value = '';
-  // Reset by hand as well as by value: choosing the same file twice in a row fires no
-  // `change` event if the input still holds it.
   const file = document.querySelector<HTMLInputElement>('#file');
   if (file) file.value = '';
   el.pasteStat.textContent = 'Nothing pasted yet.';
@@ -708,6 +848,7 @@ function renderShape(document: DocumentView, timeline?: { month: string; entries
       : 'Nothing in this document can be placed on a timeline — no entry writes a month and a year together.';
 
   void renderComposition(document);
+  renderHeat(document.mentions.byMonth);
 }
 
 /**
@@ -735,11 +876,10 @@ async function indexNow(): Promise<void> {
   el.indexStat.textContent = 'Splitting it up, finding its dates, and embedding every note…';
 
   try {
-    const year = el.year.value.trim();
     const response = await fetch('./api/index', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: el.paste.value, year: year ? Number(year) : null }),
+      body: JSON.stringify({ text: el.paste.value }),
     });
     const body = await readJson<{
       document?: DocumentView;
@@ -838,7 +978,14 @@ function renderSuggestions(): void {
 /** Take the server's reading of what was just indexed, and show its questions. */
 function useSuggestions(kindLabel: string | undefined, next: string[] | undefined): void {
   if (next && next.length > 0) suggestions = next;
-  el.suggestHint.textContent = kindLabel ? `This looks like ${kindLabel}. Try one of these:` : '';
+  // 🔴 WHAT THE DOCUMENT WAS TAKEN FOR IS THE FIRST THING IN THE LINE, AND IT IS MARKED.
+  // The guess is the one thing on this page the reader did not author, so it is the one
+  // thing that has to be visible enough to be disagreed with — plain grey text between two
+  // sentences is a guess nobody notices, and a guess nobody notices is a guess nobody can
+  // correct. George, 20 Sep 2026: "make what it looks like highlighted".
+  el.suggestHint.innerHTML = kindLabel
+    ? `This looks like <b class="kind-badge">${esc(kindLabel)}</b> — try one of these:`
+    : '';
   renderSuggestions();
 }
 
@@ -1027,6 +1174,7 @@ function renderAnswer(answer: Answer): void {
   // Drawn for a refusal as well as an answer: a refusal is exactly the case where seeing
   // that NOTHING was used is worth the space.
   renderSpine(answer.spine);
+  renderFunnel(answer.funnel);
 
   if (answer.mode === 'refused') {
     el.answer.classList.add('refused');

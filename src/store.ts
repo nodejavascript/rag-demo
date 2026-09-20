@@ -17,6 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { MentionMonths } from './charts.js';
 import { AppError } from './types.js';
 import type { Chunk, DocumentView, Entry, IndexStats, ImageRef, Mention } from './types.js';
 
@@ -31,7 +32,7 @@ export interface DocumentRecord {
   createdAt: string;
   expiresAt: string | null;
   stats: IndexStats;
-  mentions: { places: Mention[]; people: Mention[]; amounts: Mention[] };
+  mentions: { places: Mention[]; people: Mention[]; amounts: Mention[]; byMonth?: MentionMonths };
   imageCount: number;
   entries: number;
 }
@@ -284,6 +285,7 @@ export class Store {
         places: mentions.places ?? [],
         people: mentions.people ?? [],
         amounts: mentions.amounts ?? [],
+        byMonth: mentions.byMonth,
       },
       imageCount: row.image_count,
     };

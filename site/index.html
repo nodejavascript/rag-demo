@@ -175,10 +175,6 @@ It works best when the document has its own structure: dates on their own line, 
             <button type="button" id="clear" class="ghost">Clear</button>
             <input type="file" id="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
             <span class="grow"></span>
-            <label class="field">
-              <span>Year for entries that write no year</span>
-              <input type="number" id="year" class="year" placeholder="2026" min="1900" max="2100" />
-            </label>
           </div>
           <p class="statline" id="paste-stat">Nothing pasted yet.</p>
           <div id="health"></div>
@@ -211,6 +207,11 @@ It works best when the document has its own structure: dates on their own line, 
                 <p>The places, people and amounts it mentions most, counted by the program.</p>
                 <canvas id="composition" height="190"></canvas>
               </div>
+            </div>
+            <div class="chart-box" id="heat-box" hidden>
+              <h3>Who and what appears when</h3>
+              <p id="heat-note"></p>
+              <canvas id="heat" height="150"></canvas>
             </div>
             <div id="shape-warnings"></div>
           </div>
@@ -253,6 +254,11 @@ It works best when the document has its own structure: dates on their own line, 
               <h3>Where the answer came from</h3>
               <p id="spine-note"></p>
               <canvas id="spine" height="76"></canvas>
+            </div>
+            <div class="chart-box" id="funnel-box" hidden>
+              <h3>How it found it</h3>
+              <p id="funnel-note">Each bar is a stage of the search, and the number is how many notes were still in play after it — counted by the stage itself, never inferred.</p>
+              <canvas id="funnel" height="120"></canvas>
             </div>
             <div class="details" id="answer-details"></div>
 

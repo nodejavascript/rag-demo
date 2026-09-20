@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildSpine, continuousMonths, emptyMonths } from '../dist/charts.js';
+import { buildFunnel, buildMentionMonths, buildSpine, continuousMonths, emptyMonths } from '../dist/charts.js';
 
 /* ---------------------------------------------------------------- the month series */
 
@@ -118,4 +118,81 @@ test('a document with no entries draws nothing rather than crashing', () => {
   const spine = buildSpine([], [1, 2]);
   assert.deepEqual(spine.items, []);
   assert.equal(spine.total, 0);
+});
+
+/* ---------------------------------------------------------------- who appears when */
+
+const MONTHS = ['2026-03', '2026-04'];
+const ENTRIES = [{ month: '2026-03' }, { month: '2026-04' }, { month: null }];
+const TOP = [
+  { value: 'Grimsby', kind: 'place' },
+  { value: 'Andrea', kind: 'person' },
+];
+
+function chunk(entryIndex, people = [], places = [], amounts = []) {
+  return { entryIndex, people, places, amounts };
+}
+
+test('a mention is counted in the month its note belongs to', () => {
+  const grid = buildMentionMonths(
+    [chunk(0, [], ['Grimsby']), chunk(0, [], ['Grimsby']), chunk(1, ['Andrea'])],
+    MONTHS,
+    ENTRIES,
+    TOP
+  );
+  assert.deepEqual(grid.months, MONTHS, 'nothing landed in the undated column, so it is not in the axis');
+  const grimsby = grid.series.find((row) => row.name === 'Grimsby');
+  const andrea = grid.series.find((row) => row.name === 'Andrea');
+  assert.deepEqual(grimsby.counts, [2, 0], 'two notes in March name Grimsby, none in April');
+  assert.deepEqual(andrea.counts, [0, 1]);
+});
+
+test('a mention with no month is shown as undated, never given one', () => {
+  // 🔴 The tempting shortcut is to drop it or to file it under the nearest month. Both would
+  // put a place somewhere the document never wrote it, on a chart that exists to say where
+  // things are written.
+  const grid = buildMentionMonths([chunk(2, [], ['Grimsby'])], MONTHS, ENTRIES, TOP);
+  assert.deepEqual(grid.months, [...MONTHS, 'undated'], 'the column appears because something is in it');
+  assert.deepEqual(grid.series.find((row) => row.name === 'Grimsby').counts, [0, 0, 1]);
+  assert.equal(grid.series.find((row) => row.name === 'Andrea').counts.length, 3, 'every row is as wide as the axis');
+});
+
+test('a name is matched whatever case it was written in', () => {
+  const grid = buildMentionMonths([chunk(0, [], ['GRIMSBY'])], MONTHS, ENTRIES, TOP);
+  assert.deepEqual(grid.series.find((row) => row.name === 'Grimsby').counts, [1, 0]);
+});
+
+test('no mentions and no notes both give an empty grid rather than a broken chart', () => {
+  assert.deepEqual(buildMentionMonths([], MONTHS, ENTRIES, TOP), { months: [], series: [] });
+  assert.deepEqual(buildMentionMonths([chunk(0, [], ['Grimsby'])], MONTHS, ENTRIES, []), {
+    months: [],
+    series: [],
+  });
+});
+
+/* ---------------------------------------------------------------- the funnel */
+
+test('the funnel narrows, and every stage reports what the stage before it passed on', () => {
+  const stages = buildFunnel({ notes: 29, ranked: 60, reranked: 30, shown: 8 });
+  assert.deepEqual(
+    stages.map((stage) => stage.notes),
+    [29, 60, 30, 8],
+    'the document, what the two searches proposed, what the reranker weighed, what was shown'
+  );
+  assert.equal(stages[0].notes >= stages[stages.length - 1].notes, true, 'it ends with fewer than it started');
+});
+
+test('a stage that never ran is left out, not drawn as a stage that found nothing', () => {
+  // 🔴 A reranker that was never configured and a reranker that scored nothing look
+  // identical on a chart, and mean opposite things.
+  const stages = buildFunnel({ notes: 29, ranked: 12, shown: 8 });
+  assert.equal(stages.some((stage) => /reranker/i.test(stage.label)), false, 'no reranker in the list');
+  assert.equal(stages.length, 3);
+});
+
+test('a refusal stops the funnel where the refusal was decided', () => {
+  const stages = buildFunnel({ notes: 29, shown: 0, silent: true });
+  assert.equal(stages.length, 2, 'the document, and the stage that said no');
+  assert.equal(stages[1].notes, 0);
+  assert.match(stages[1].note, /no model was called/i);
 });
