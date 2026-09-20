@@ -28,8 +28,9 @@ import { indexDocument, MAX_CHARS, MIN_CHARS, DEFAULT_TTL_HOURS } from './indexe
 import { modelConfig, Model } from './model.js';
 import { DEFAULT_RETRIEVE } from './retrieve.js';
 import { Store } from './store.js';
-import { AppError } from './types.js';
+import { AppError, type DocumentView } from './types.js';
 import { SAMPLES } from './samples.js';
+import { describeDocument } from './kinds.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '4500', 10);
 const HOST = process.env.HOST ?? '127.0.0.1';
@@ -39,6 +40,21 @@ const FILE_LIMIT = Number.parseInt(process.env.FILE_LIMIT ?? '12000000', 10);
 const MAX_CONCURRENT_INDEX = Number.parseInt(process.env.MAX_CONCURRENT_INDEX ?? '2', 10);
 
 const SITE_DIR = fileURLToPath(new URL('../site/', import.meta.url));
+
+/**
+ * What kind of document this is, and what is worth asking it.
+ *
+ * 🔴 **COMPUTED ON THE WAY OUT, IN ONE PLACE.** Not stored, because it is a reading of the
+ * text and the text is what the store holds; and not computed twice, so the index response
+ * and the document response can never describe the same document differently. The page uses
+ * it to offer questions that suit what was actually pasted — George, 20 Sep 2026: *"in ask
+ * it something, if it detects a resume, can you create better questions, like what are the
+ * skills?"*
+ */
+function describe(store: Store, document: DocumentView): { kind: string; kindLabel: string; suggestions: string[] } {
+  const described = describeDocument(store.documentText(document.id), document.stats.datedEntries);
+  return { kind: described.kind, kindLabel: described.label, suggestions: described.suggestions };
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -295,6 +311,7 @@ const server = createServer((request, response) => {
           );
           sendJson(response, 200, {
             document: result.document,
+            ...describe(store, result.document),
             reused: result.reused,
             warnings: result.warnings,
           });
@@ -336,6 +353,7 @@ const server = createServer((request, response) => {
           }
           sendJson(response, 200, {
             document,
+            ...describe(store, document),
             images: store.images(id),
             housekeeping: store.housekeeping(),
           });

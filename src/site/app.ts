@@ -343,6 +343,30 @@ function drawScores(canvas: HTMLCanvasElement, sources: Source[]): void {
 
 let current: DocumentView | null = null;
 
+/**
+ * The questions offered under the box.
+ *
+ * 🔴 **THEY FOLLOW THE DOCUMENT, AND THEY DID NOT BEFORE.** The five that stood here were
+ * written for a diary, and offering *"Which month was busiest?"* to somebody who has just
+ * pasted a resume tells them the tool has not read what they gave it — George, 20 Sep 2026:
+ * *"in ask it something, if it detects a resume, can you create better questions, like what
+ * are the skills?"* The server works out what the document is and sends the questions with
+ * the index; the list below is only what is shown before anything has been indexed.
+ *
+ * The kind is a guess, and it is shown as one: the label above the buttons names what the
+ * document was taken for, so a wrong guess is visible rather than silent. Every question,
+ * whichever set it came from, is answered by the same pipeline and refused the same way.
+ */
+const BEFORE_INDEXING = [
+  'What is this document about?',
+  'What happened first, and what happened last?',
+  'Which month was busiest?',
+  'Where do the events take place?',
+  'Who is mentioned most?',
+];
+
+let suggestions: string[] = [...BEFORE_INDEXING];
+
 const el = {
   paste: $<HTMLTextAreaElement>('paste'),
   year: $<HTMLInputElement>('year'),
@@ -365,6 +389,7 @@ const el = {
   askButton: $<HTMLButtonElement>('ask'),
   askError: $('ask-error'),
   suggestions: $('suggestions'),
+  suggestHint: $('suggestions-hint'),
   answerWrap: $('answer-wrap'),
   answer: $('answer'),
   answerQ: $('answer-q'),
@@ -470,6 +495,9 @@ $('clear').addEventListener('click', () => resetToHome());
  */
 function resetToHome(): void {
   current = null;
+  suggestions = [...BEFORE_INDEXING];
+  if (el.suggestHint) el.suggestHint.textContent = '';
+  if (el.suggestions) renderSuggestions();
 
   // The steps that only exist while a document does.
   el.step2.hidden = true;
@@ -613,11 +641,14 @@ async function indexNow(): Promise<void> {
       reused?: boolean;
       warnings?: string[];
       error?: string;
+      kindLabel?: string;
+      suggestions?: string[];
     }>(response);
     if (!response.ok || !body.document) throw new Error(body.error ?? `The server answered ${response.status}.`);
 
     current = body.document;
     renderShape(body.document);
+    useSuggestions(body.kindLabel, body.suggestions);
 
     el.indexStat.textContent = body.reused
       ? 'This exact text was already indexed, so the existing index was reused.'
@@ -685,16 +716,9 @@ async function deleteNow(): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ step 3 */
-const SUGGESTIONS = [
-  'What is this document about?',
-  'What happened first, and what happened last?',
-  'Which month was busiest?',
-  'Where do the events take place?',
-  'Who is mentioned most?',
-];
 
 function renderSuggestions(): void {
-  el.suggestions.innerHTML = SUGGESTIONS.map(
+  el.suggestions.innerHTML = suggestions.map(
     (text, at) => `<button type="button" class="ghost" data-q="${esc(text)}" data-at="${at}">${esc(text)}</button>`
   ).join('');
   for (const button of el.suggestions.querySelectorAll('button')) {
@@ -704,6 +728,14 @@ function renderSuggestions(): void {
     });
   }
 }
+
+/** Take the server's reading of what was just indexed, and show its questions. */
+function useSuggestions(kindLabel: string | undefined, next: string[] | undefined): void {
+  if (next && next.length > 0) suggestions = next;
+  el.suggestHint.textContent = kindLabel ? `This looks like ${kindLabel}. Try one of these:` : '';
+  renderSuggestions();
+}
+
 renderSuggestions();
 
 el.askButton.addEventListener('click', () => void askNow());

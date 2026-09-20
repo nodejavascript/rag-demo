@@ -14,7 +14,7 @@
  */
 
 import { tally } from './enrich.js';
-import { buildMessages, isRefusal, readShape } from './prompt.js';
+import { buildMessages, isNothingFurther, isRefusal, readShape } from './prompt.js';
 import { retrieve, type RetrieveOptions } from './retrieve.js';
 import { factsFor } from './stats.js';
 import { analyseGaps } from './gaps.js';
@@ -28,6 +28,26 @@ export interface AnswerOptions {
   /** Raise the sampling away from 0 when the words matter more than the repeatability. */
   temperature?: number;
 }
+
+/**
+ * How much sampling an answer gets.
+ *
+ * 🔴 THIS IS NOT ZERO, AND IT WAS ZERO UNTIL 20 Sep 2026 — George: *"instead of sounding
+ * robotic, and it expand on what it outputs."* Greedy decoding takes the shortest path
+ * through the safest words, so every question touching several notes came back in the
+ * same construction: *"cold on 4 March 2026, and rain on 18 March 2026, and frost on 26
+ * March 2026"* — correct, and reading like a form being filled in.
+ *
+ * **It is kept LOW on purpose.** The rules that matter most here — a date claimed only
+ * when the day, the month and the year were all written, a proper name copied exactly as
+ * the document writes it, a refusal when the notes are silent — are precisely the ones
+ * sampling could loosen. So this is the smallest value that improved the prose, and
+ * `npm run eval` plus the live questions are what decide whether it cost anything. The
+ * plumbing for it was already here: the option above existed with the comment *"raise the
+ * sampling away from 0 when the words matter more than the repeatability"*, and nobody had
+ * ever called it.
+ */
+export const DEFAULT_TEMPERATURE = 0.3;
 
 function sourceOf(scored: Scored): Source {
   return {
@@ -172,7 +192,7 @@ export async function answer(
 
   const modelStarted = Date.now();
   const reply = await model.chat(messages, {
-    temperature: options.temperature ?? 0,
+    temperature: options.temperature ?? DEFAULT_TEMPERATURE,
     numCtx: 8192,
     numPredict: 700,
   });
@@ -180,7 +200,7 @@ export async function answer(
 
   const refused = isRefusal(reply);
   const shape = readShape(reply);
-  const prose = [shape.says, shape.suggests && shape.suggests !== 'Nothing further.' ? shape.suggests : null]
+  const prose = [shape.says, isNothingFurther(shape.suggests) ? null : shape.suggests]
     .filter((part): part is string => Boolean(part))
     .join('\n\n');
 

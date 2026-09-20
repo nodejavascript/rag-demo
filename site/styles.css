@@ -227,6 +227,11 @@ textarea#paste::placeholder { color: #4d7a7f; }
 
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .row.tight { margin-top: 8px; gap: 8px; }
+
+/* The line that names what the document was taken for, above its questions. Empty until
+   something is indexed, and it takes no room while it is. */
+.suggest-hint { margin: 10px 0 0; font-size: 13.5px; color: var(--muted, #8b93a7); }
+.suggest-hint:empty { display: none; }
 .grow { flex: 1 1 auto; }
 
 button, .btn {

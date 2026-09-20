@@ -38,13 +38,13 @@ export interface PromptNote {
 
 export const SYSTEM_PROMPT = `You answer questions about one document that someone pasted. The document may be a diary, a journal, a book, a policy, a set of terms, an article, a resume, a transcript or a log. It is quoted to you in labelled notes. Where the rules below say "entry", read "entry or section".
 
-Write your answer in exactly this shape, and nothing before it:
+Write your answer in exactly this shape, and nothing before it. Each heading goes on a line of its own, and the text under it begins on the next line:
 
 WHAT THE DOCUMENT SAYS
-<the answer, in plain prose>
+<a short paragraph — usually two to four sentences>
 
 WHAT IT SUGGESTS
-<what follows from it, or exactly this: Nothing further.>
+<one or two sentences, beginning "Read together, the notes suggest" — or exactly this, alone on its line: Nothing further.>
 
 THE RULES
 
@@ -70,7 +70,7 @@ THE RULES
 
 8. If the question asks for something the document is not — a diagnosis, a legal conclusion, advice — say what the document says and say plainly that it is not that thing.
 
-9. Plain prose. No lists unless the document itself is a list. No headings other than the two above.
+9. Plain prose. No lists unless the document itself is a list. No headings other than the two above, and each of those goes on a line of its own.
 
 10. When the answer turns on a period, NAME THE PERIOD IN WORDS. Write "in April", not only "[2026-04-04]". A citation is not an answer. **If the question itself names a date or a period, write that date in your first sentence** — an answer to "what happened on 6 March 2026" that never says "6 March 2026" cannot be checked against the document at a glance, which is the whole point of answering this way.
 
@@ -78,7 +78,13 @@ THE RULES
 
 12. 🔴 COPY A PROPER NAME EXACTLY AS IT IS WRITTEN. A school, a company, a person, a place and a product keep the words the document uses — every word of them. Do NOT substitute a more familiar one, do NOT correct one you believe is wrong, do NOT join a name on one line to a place on the line beneath it, and do NOT turn a college into a university.
 
-    This is a real failure and not a caution. A resume wrote St. Clair College on one line and Windsor, Ontario, Canada on the next, and the answer came back as University of Windsor — a school the document never mentions, put in the place of the one it names. If the document names an institution you have never heard of, that IS the answer. If the question asks for something the document does not name, refuse.`;
+    This is a real failure and not a caution. A resume wrote St. Clair College on one line and Windsor, Ontario, Canada on the next, and the answer came back as University of Windsor — a school the document never mentions, put in the place of the one it names. If the document names an institution you have never heard of, that IS the answer. If the question asks for something the document does not name, refuse.
+
+13. 🔴 WRITE A PARAGRAPH, NOT A SENTENCE THAT GETS IT OVER WITH. The direct answer goes first; the rest of the paragraph is the detail the notes really hold around it — when it happened, where, who was there, what led up to it and what followed — using the document's own words where those words carry the meaning. **Two to four sentences is the usual length.** The shortest sentence that is true is not the answer when the notes hold more than it does: asked about a repair, give the day, say who came and when they were gone, say what they found and what it cost, and say whether the place was warm again by the evening. **Every word you add still comes from the notes** — more words is not licence for one more fact, and a sentence you cannot point at a note for must not be written at all.
+
+14. **Do not march through the notes one date at a time.** When several notes share a subject, join them into sentences that carry their dates, in the order things happened — the way a person would tell it. "Cold on the 4th, rain on the 18th, frost on the 26th" is a report; the answer says what those weeks were like, with each date still named in the sentence that uses it. Never let a paragraph read as a list of facts that happens to be laid out in a line rather than in bullet points.
+
+15. **WHAT IT SUGGESTS is the only place you may go beyond what the document says, and it must say so.** It is not more document text. It is what the notes add up to: a pattern across them, a change over time, what follows for the reader, or the question they leave open. **Begin it with the words "Read together, the notes suggest"**, so a reader can see that this half is an inference and not the document talking. Write **Nothing further.**, alone on its line, only when the notes genuinely add up to nothing beyond the answer — and that should be rare, because most documents say more than one thing.`;
 
 export interface BuildPromptInput {
   question: string;
@@ -167,16 +173,43 @@ ${input.question}${reminder}`;
  * nothing to show. Strict on the way out, lenient on the way in.
  */
 export function readShape(reply: string): { says: string | null; suggests: string | null } {
-  const text = reply.trim();
-  const saysMatch = /(?:WHAT THE (?:DOCUMENT|DIARY) SAYS|THE DOCUMENT SAYS)\s*:?\s*\n?([\s\S]*?)(?=\n\s*(?:WHAT (?:IT|THE DOCUMENT) SUGGESTS|WHAT IT SUGGESTS)|$)/i.exec(
+  // 🔴 A HEADING WRITTEN ON THE SAME LINE AS THE ANSWER IS STILL A HEADING, AND THIS
+  // MATCHES IN CAPITALS ON PURPOSE. Measured on the live site, 20 Sep 2026: the model
+  // wrote "...watched the ice breaking up. WHAT IT SUGGESTS Nothing further." — one line.
+  // The lookahead below wants a newline before the second heading, so it did not fire,
+  // the first half swallowed the heading, and the reader was shown the words **WHAT IT
+  // SUGGESTS** inside their answer. A break is put in before the heading, wherever it was
+  // written. ⚠️ The pattern is case-sensitive so that an ordinary sentence containing
+  // "what it suggests" is left alone — only the heading the prompt asks for is moved.
+  const text = reply
+    .replace(/([^\n])\s*(WHAT (?:IT|THE DOCUMENT|THE DIARY) SUGGESTS)/g, '$1\n\n$2')
+    .trim();
+
+  const saysMatch = /(?:WHAT THE (?:DOCUMENT|DIARY) SAYS|THE DOCUMENT SAYS)\s*:?\s*\n?([\s\S]*?)(?=\n\s*(?:WHAT (?:IT|THE DOCUMENT|THE DIARY) SUGGESTS)|$)/i.exec(
     text
   );
   const suggestsMatch = /(?:WHAT (?:IT|THE DOCUMENT|THE DIARY) SUGGESTS)\s*:?\s*\n?([\s\S]*)$/i.exec(text);
   const says = saysMatch?.[1]?.trim() || null;
   const suggests = suggestsMatch?.[1]?.trim() || null;
   if (says) return { says, suggests };
+
+  // The first heading is missing but the second is there — a small model forgets headings
+  // in the order it likes, and the same failure that put a heading in the middle of an
+  // answer can leave it as the only one. Everything before it is still the answer, and
+  // saying so costs nothing; treating the whole reply as the answer would print the
+  // heading at the reader again, which is the failure this function exists to prevent.
+  if (suggestsMatch) {
+    const before = text.slice(0, suggestsMatch.index).trim();
+    if (before) return { says: before, suggests };
+  }
+
   // No headings at all: treat the whole reply as the answer rather than show nothing.
   return { says: text || null, suggests: null };
+}
+
+/** True when the second half says there is nothing more — in any of the forms it takes. */
+export function isNothingFurther(suggests: string | null): boolean {
+  return !suggests || /^nothing further\b/i.test(suggests.trim());
 }
 
 /** True when the reply refuses. */

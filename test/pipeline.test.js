@@ -21,7 +21,7 @@ import { indexDocument } from '../dist/indexer.js';
 import { answer } from '../dist/answer.js';
 import { retrieve } from '../dist/retrieve.js';
 import { factsFor, factsAsText, subjectTerms, properNouns } from '../dist/stats.js';
-import { isRefusal, readShape } from '../dist/prompt.js';
+import { isNothingFurther, isRefusal, readShape } from '../dist/prompt.js';
 
 /* ---------------------------------------------------------------- stub model */
 
@@ -501,4 +501,28 @@ test('the old wording is still accepted, so a cached reply cannot break the page
   assert.equal(readShape('WHAT THE DIARY SAYS\nIt rained.').says, 'It rained.');
   assert.equal(isRefusal("The diary doesn't say."), true);
   assert.equal(isRefusal('It rained.'), false);
+});
+
+test('a heading written on the SAME LINE as the answer is still a heading', () => {
+  // 🔴 MEASURED ON THE LIVE SITE, 20 Sep 2026. The model wrote the second heading on the
+  // end of the answer's own line — "…watched the ice breaking up. WHAT IT SUGGESTS Nothing
+  // further." — and the reader was shown the words **WHAT IT SUGGESTS** inside their
+  // answer, because the parser wanted a newline before the heading and there was none.
+  const shape = readShape('The ice was breaking up. WHAT IT SUGGESTS Nothing further.');
+  assert.equal(shape.says, 'The ice was breaking up.', 'the heading is not part of the answer');
+  assert.equal(isNothingFurther(shape.suggests), true, 'and the empty second half is dropped');
+});
+
+test('an ordinary sentence mentioning what it suggests is left alone', () => {
+  // The fix above matches in CAPITALS on purpose. Without that, this sentence — which is
+  // prose, not a heading — would be cut in half.
+  const shape = readShape('WHAT THE DOCUMENT SAYS\nIt rained hard, and what it suggests is a wet week.');
+  assert.equal(shape.says, 'It rained hard, and what it suggests is a wet week.');
+});
+
+test('isNothingFurther accepts every form the empty second half arrives in', () => {
+  assert.equal(isNothingFurther(null), true, 'no second half at all');
+  assert.equal(isNothingFurther('Nothing further.'), true);
+  assert.equal(isNothingFurther('  nothing further  '), true, 'however it is spaced or cased');
+  assert.equal(isNothingFurther('Read together, the notes suggest a wet month.'), false);
 });
