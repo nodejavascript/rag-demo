@@ -239,12 +239,17 @@ The file is mounted as `MODEL_API_KEY_FILE` and **the service starts happily wit
 intended: a page that loads and says *"the model is not reachable"* is better than a page
 that fails, and much better than one that pretends.
 
-**The key is created in the DigitalOcean console, and nowhere else.** There is no public
-API route for it — `GET /v2/gen-ai/model_access_keys` answers `404 not_found`, so it
-cannot be minted from this machine. George creates the Model Access Key himself and saves
-it to that file; **it is never pasted into a chat and never committed.** Model *names*
-(`openai-gpt-oss-20b`, `llama3.3-70b-instruct`, …) **are** readable from the API, so the
-account does have the models — only the key is missing.
+**The key is created by hand, in a console — there is no API route that mints one**, which is
+why it takes a human minute. **Which console depends on the provider:** the demo runs on
+**Cloudflare Workers AI**, so a token created at
+`dash.cloudflare.com/profile/api-tokens` (Account → Workers AI → Read) is the one to save to
+that file, and `tools/use-workers-ai.sh` does everything after it. The paragraph below is the
+DigitalOcean variant, kept because `MODEL_BASE_URL` can be pointed there instead.
+
+**The DigitalOcean key is created in the DigitalOcean console, and nowhere else.** There is no
+public API route for it — `GET /v2/gen-ai/model_access_keys` answers `404 not_found`, so it
+cannot be minted from this machine. Model *names* (`openai-gpt-oss-20b`, `llama3.3-70b-instruct`,
+…) **are** readable from the API, so the account does have the models — only the key is missing.
 
 The memory limit in `docker-compose.yml` (288 MB) is not decoration: that host runs
 nine other sites and a Postgres in 1 GB of RAM. An unbounded Node process plus a large

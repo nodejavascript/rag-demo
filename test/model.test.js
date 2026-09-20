@@ -176,6 +176,64 @@ test('a missing key file produces no key rather than a crash', () => {
   assert.equal(config.apiKey, null, 'an absent key is null, and the 401 then says so plainly');
 });
 
+test('an EMPTY key file is reported as NO key, not as a refused one — and nothing is asked', async () => {
+  // 🔴 THE INCIDENT, 20 Sep 2026. `/opt/rag/secrets/model_key` was **0 bytes**. No
+  // Authorization header was sent, DigitalOcean answered 401 `{"id":"Unauthorized",
+  // "message":"Unable to authenticate you"}`, and the site reported **"the model
+  // credential was refused"** — so the reader went looking for a key that was wrong, when
+  // the truth was that there was no key at all. Measured live on the deployed site before
+  // this test existed.
+  const dir = mkdtempSync(join(tmpdir(), 'rag-nokey-'));
+  try {
+    const keyFile = join(dir, 'model_key');
+    writeFileSync(keyFile, ''); // the exact state of the droplet's file
+    const config = modelConfig({ MODEL_BASE_URL: 'https://example.invalid/v1', MODEL_API_KEY_FILE: keyFile });
+    assert.equal(config.apiKey, null, 'an empty file is no key, and it cannot become one by asking');
+
+    const seen = stubFetch(401, { id: 'Unauthorized', message: 'Unable to authenticate you' });
+    const health = await new Model(config).health();
+
+    assert.equal(health.ok, false);
+    assert.match(health.detail, /no model key is configured/, 'it says there is no key');
+    assert.doesNotMatch(
+      health.detail,
+      /refused|credential was refused/,
+      'and never claims a credential was refused — there was no credential to refuse'
+    );
+    assert.equal(seen.length, 0, 'nothing is asked of a provider we hold no credential for');
+
+    await assert.rejects(
+      () => new Model(config).embed(['anything at all']),
+      (error) => {
+        assert.match(error.message, /No model key is configured/, 'the ask path says the same thing');
+        assert.doesNotMatch(error.message, /API key was refused/, 'and does not blame a key that was never sent');
+        assert.doesNotMatch(
+          error.message,
+          /The model provider refused the request/,
+          'nor does it lead by saying a provider refused something — nobody refused anything'
+        );
+        return true;
+      }
+    );
+    assert.equal(seen.length, 1, 'the ask still goes to the provider — it is the READINESS check that must not');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a key that IS sent and IS refused still reads as a refused key', async () => {
+  // The other half of the same rule, and the half that keeps the fix honest: without this,
+  // "always say the key is missing" would pass — and be exactly as wrong in the other
+  // direction. A real credential is really sent, and a real 401 is a refused key.
+  const seen = stubFetch(401, { id: 'Unauthorized', message: 'Unable to authenticate you' });
+  const health = await new Model(openaiish).health();
+
+  assert.equal(seen.length, 1, 'a credential we hold is actually sent');
+  assert.equal(seen[0].headers.authorization, 'Bearer a-token', 'and it rides in the header');
+  assert.equal(health.ok, false);
+  assert.match(health.detail, /refused/, 'a refused key is still called a refused key');
+});
+
 /* ------------------------------------------------------------------ *
  * Errors the reader can actually see
  * ------------------------------------------------------------------ */

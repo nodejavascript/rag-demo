@@ -182,14 +182,29 @@ export class Model {
       // an error report.
       if (!response.ok) {
         const detail = await response.text().catch(() => '');
-        const hint =
-          response.status === 402
+
+        // 🔴 A REFUSED KEY AND NO KEY AT ALL ARE DIFFERENT FAULTS, and until 20 Sep 2026
+        // this line reported both of them as "The model provider refused the request
+        // (401). The API key was refused. Check MODEL_API_KEY_FILE."
+        //
+        // With no key, `#headers()` sends no Authorization header, so the provider 401s a
+        // request that never carried a credential. That 401 is real; the two sentences
+        // drawn from it were not — nobody refused anything, and there was no key to check.
+        // George pasted the result and went looking for a key that was wrong — while
+        // `/opt/rag/secrets/model_key`, the file that should have held one, was **0 bytes**.
+        const noKeyRefusal = this.config.apiKey === null && (response.status === 401 || response.status === 403);
+        const head = noKeyRefusal
+          ? `No model key is configured, so this request carried no credential (the provider answered ${response.status}).`
+          : `The model provider refused the request (${response.status}).`;
+        const hint = noKeyRefusal
+          ? ' MODEL_API_KEY_FILE is unset, or the file it names is empty or missing.'
+          : response.status === 402
             ? ' On DigitalOcean this means serverless inference is not enabled on the account yet.'
             : response.status === 401 || response.status === 403
               ? ' The API key was refused. Check MODEL_API_KEY_FILE.'
               : '';
         throw new AppError(
-          `The model provider refused the request (${response.status}).${hint} ${detail.slice(0, 200)}`,
+          `${head}${hint} ${detail.slice(0, 200)}`,
           response.status === 402 ? 402 : 503
         );
       }
@@ -325,6 +340,24 @@ export class Model {
         if (missing.length > 0) return { ok: false, detail: `Not pulled: ${missing.join(', ')}` };
         return { ok: true, detail: `${this.config.chatModel} + ${this.config.embedModel}` };
       }
+      // 🔴 NO KEY IS NOT A REFUSED KEY. `readKey` returns null when `MODEL_API_KEY_FILE`
+      // is unset or names a file that is missing — or, the state this demo actually
+      // shipped in, **0 bytes** — and `#headers()` then sends no Authorization header at
+      // all. The provider answers 401 to a request that never carried a credential, and
+      // reporting that 401 as "the model credential was refused" is what sent George
+      // hunting for a bad key on 20 Sep 2026 while the key file was empty.
+      //
+      // So the absent key is named here, before the probe. There is nothing to ask a
+      // provider about, and a live 401 would only put a false reason in front of the real
+      // one.
+      if (!this.config.apiKey) {
+        return {
+          ok: false,
+          detail:
+            'no model key is configured — MODEL_API_KEY_FILE is unset, or the file it names is empty or missing',
+        };
+      }
+
       const response = await fetch(`${this.config.baseUrl}/models`, {
         headers: this.#headers(),
         signal: AbortSignal.timeout(6000),
