@@ -59,11 +59,34 @@ export function fingerprintOf(text: string, embedModel: string): string {
   return createHash('sha256').update(`${PIPELINE_VERSION}\u0000${embedModel}\u0000${text}`).digest('hex');
 }
 
+/**
+ * Where an index has got to, in the only terms that are true while it is running.
+ *
+ * `done` and `total` are counted by the program — notes embedded, out of the notes there are — and
+ * never a percentage worked out from a clock. Three stages, because there are three things that
+ * happen and the reader is entitled to know which one is slow.
+ */
+export interface IndexProgress {
+  stage: 'reading' | 'embedding' | 'saving';
+  done: number;
+  total: number;
+  /** Milliseconds since this index started. */
+  ms: number;
+}
+
+export type IndexProgressFn = (progress: IndexProgress) => void;
+
 export async function indexDocument(
   store: Store,
   model: Model,
-  input: IndexInput
+  input: IndexInput,
+  onProgress?: IndexProgressFn
 ): Promise<IndexResult> {
+  const startedAt = Date.now();
+  const report = (stage: IndexProgress['stage'], done: number, total: number): void =>
+    onProgress?.({ stage, done, total, ms: Date.now() - startedAt });
+
+  report('reading', 0, 1);
   const warnings: string[] = [];
   const prepared = prepare(input.text ?? '');
 
@@ -91,6 +114,7 @@ export async function indexDocument(
     // by this pipeline, so it is rebuilt rather than served from the cache.
     const usable = document && (document.stats.entries === 0 || document.mentions.places.length + document.mentions.people.length + document.mentions.amounts.length > 0);
     if (document && usable) {
+      report('reading', 1, 1);
       return {
         document,
         reused: true,
@@ -101,6 +125,7 @@ export async function indexDocument(
   }
 
   const built = build(prepared.text, input.yearHint ?? null, prepared.images);
+  report('reading', 1, 1);
 
   if (built.stats.entries === 0 || built.chunks.length === 0) {
     throw new AppError('Nothing in that text could be read as an entry. Is it really text?', 400);
@@ -120,9 +145,18 @@ export async function indexDocument(
     );
   }
 
+  // The notes are embedded in batches, and each batch reports what it finished. `total` is the
+  // note count, which is known before the first batch is sent — so the chart has a real
+  // denominator rather than a guessed one.
   const started = Date.now();
-  const vectors = await model.embed(built.chunks.map((chunk) => searchableText(chunk.heading, chunk.text)));
+  report('embedding', 0, built.chunks.length);
+  const vectors = await model.embed(
+    built.chunks.map((chunk) => searchableText(chunk.heading, chunk.text)),
+    (done, total) => report('embedding', done, total)
+  );
   const embeddingMs = Date.now() - started;
+
+  report('saving', 0, 1);
 
   const stats: IndexStats = { ...built.stats, embeddingMs };
 
@@ -157,6 +191,7 @@ export async function indexDocument(
   };
 
   store.insert(record, built.entries, built.chunks, vectors);
+  report('saving', 1, 1);
 
   const document = store.getDocument(record.id);
   if (!document) throw new AppError('The document was written but could not be read back.', 500);

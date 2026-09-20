@@ -60,7 +60,21 @@ function stubModel(reply = 'WHAT THE DOCUMENT SAYS\nIt rained. [18 March 2026]\n
     rerankModel: null,
     embedBatch: 16,
   });
-  model.embed = async (inputs) => inputs.map(stubVector);
+  // 🔴 THE STUB MUST HONOUR THE PROGRESS CALLBACK, OR THE PROGRESS TESTS TEST NOTHING.
+  // It replaces `Model.embed` outright, so when the real method grew a second parameter this
+  // stub silently kept the old signature and the indexer's reports never fired — which the test
+  // below caught immediately, in the shape of "an embedding stage that reports once is not
+  // progress". The loop mirrors the real one: the configured batch size, reporting after each.
+  model.embed = async (inputs, onBatch) => {
+    const batch = model.config.embedBatch;
+    const out = [];
+    for (let i = 0; i < inputs.length; i += batch) {
+      const slice = inputs.slice(i, i + batch);
+      out.push(...slice.map(stubVector));
+      onBatch?.(Math.min(i + slice.length, inputs.length), inputs.length);
+    }
+    return out;
+  };
   model.chat = async () => reply;
   return model;
 }
@@ -613,6 +627,60 @@ test('and a document with nothing to grid gets no grid, rather than an empty axi
       store.getDocument(document.id).mentions.byMonth,
       undefined,
       'a chart was produced for a document with nothing to put on it'
+    );
+  } finally {
+    close();
+  }
+});
+
+/* ------------------------------------------------------------ while it reads */
+
+test('the indexer reports what it is doing, in counts that are real', async () => {
+  // 🔴 THIS IS WHAT THE CHART ON THE PAGE PLOTS. George, 20 Sep 2026: *"can we show a chart while
+  // its indexing?"* — and a chart is only worth showing if its points mean something. So the
+  // assertions are about the MEANING: three stages in order, a total that is the note count, a
+  // count that never goes backwards, and a first report before any batch has been sent.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    await indexDocument(store, stubModel(), { text: diary }, (progress) => seen.push(progress));
+
+    assert.deepEqual(
+      [...new Set(seen.map((p) => p.stage))],
+      ['reading', 'embedding', 'saving'],
+      'the stages should be reported in the order the work happens'
+    );
+
+    const embedding = seen.filter((p) => p.stage === 'embedding');
+    assert.ok(embedding.length >= 2, 'an embedding stage that reports once is not progress');
+    assert.equal(embedding[0].done, 0, 'the first report must come before any batch is sent');
+    assert.equal(embedding[0].total, 9, 'the diary is nine notes, and the total is known up front');
+    assert.equal(embedding[embedding.length - 1].done, 9, 'and the last report must arrive at the total');
+    for (let i = 1; i < embedding.length; i += 1) {
+      assert.ok(embedding[i].done >= embedding[i - 1].done, 'a count that goes backwards is not a count');
+      assert.ok(embedding[i].ms >= embedding[i - 1].ms, 'and neither is a clock that goes backwards');
+    }
+    assert.ok(
+      seen.every((p) => Number.isFinite(p.ms) && p.ms >= 0 && p.done <= p.total),
+      'every report carries a real elapsed time and never overshoots its own total'
+    );
+  } finally {
+    close();
+  }
+});
+
+test('and an index that is reused says so instead of pretending to work', async () => {
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    await indexDocument(store, model, { text: diary });
+    const seen = [];
+    const again = await indexDocument(store, model, { text: diary }, (progress) => seen.push(progress));
+    assert.equal(again.reused, true);
+    assert.deepEqual(
+      [...new Set(seen.map((p) => p.stage))],
+      ['reading'],
+      'a reused index does no embedding, and must not report a stage it never ran'
     );
   } finally {
     close();

@@ -607,3 +607,108 @@ test('the cookie bar does not sit on top of the footer it belongs to', async (t)
     await context.close();
   }
 });
+
+/* ------------------------------------------------------------- while it reads */
+
+test('the index streams real progress, then the result, and never an error', async () => {
+  // 🔴 THE CONTRACT THE CHART DEPENDS ON, READ OFF THE ENDPOINT IN A REAL BROWSER. George,
+  // 20 Sep 2026: *"can we show a chart while its indexing?"* The chart is only honest if the
+  // numbers behind it are real, so this asserts the shape: progress lines first, each carrying a
+  // count out of a total that is known up front, then exactly one result line. A unique trailing
+  // paragraph is added so the document cannot be deduped into an instant reuse — which would give
+  // no progress at all and make this test pass while proving nothing.
+  if (!page) return t.skip('no browser');
+
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  const seen = await page.evaluate(async (text) => {
+    const response = await fetch('./api/index/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: `${text}\n\n21 September 2026 — a line added only to make this document new. ${Math.random()}\n` }),
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const events = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) if (line.trim()) events.push(JSON.parse(line));
+    }
+    return {
+      status: response.status,
+      type: response.headers.get('content-type'),
+      types: events.map((event) => event.type),
+      stages: [...new Set(events.filter((e) => e.type === 'progress').map((e) => e.stage))],
+      first: events.find((event) => event.type === 'progress'),
+      progress: events.filter((event) => event.type === 'progress'),
+      entries: events.find((event) => event.type === 'result')?.document?.stats?.entries,
+    };
+  }, await diary());
+
+  assert.equal(seen.status, 200, 'the stream must answer 200 — a 502 is replaced by the edge');
+  assert.match(seen.type ?? '', /ndjson/, 'and say what it is sending');
+  assert.equal(seen.types[seen.types.length - 1], 'result', 'the last line must be the result');
+  assert.ok(!seen.types.includes('error'), 'no error line on a run that worked');
+  assert.ok(seen.types.indexOf('result') === seen.types.length - 1, 'and only one result');
+  assert.deepEqual(seen.stages, ['reading', 'embedding', 'saving'], 'all three stages are reported');
+  assert.equal(seen.first.stage, 'reading', 'the first report comes before any embedding');
+  const embedding = seen.progress.filter((event) => event.stage === 'embedding');
+  assert.ok(embedding.length >= 2, 'embedding must report more than once, or there is nothing to plot');
+  assert.equal(embedding[0].done, 0);
+  assert.ok(embedding[0].total > 0, 'the total is known before the first batch is sent');
+  assert.equal(embedding[embedding.length - 1].done, embedding[0].total, 'and it ends at the total');
+  assert.ok(seen.entries > 0, 'the result carries the document');
+  // 🔴 THE TOTAL THE CHART IS SCALED TO COMES FROM THIS STAGE AND NO OTHER. `saving` reports 1 of
+  // 1 — it is a single step — so taking the total from whatever arrived last scaled the axis to 1
+  // while the line plotted eight notes and ran off the top of the box. Asserted here so the trap
+  // lives in a test rather than only in a comment.
+  const saving = seen.progress.filter((event) => event.stage === 'saving');
+  assert.equal(saving[0].total, 1, 'the saving stage reports a step, not a note count');
+  assert.ok(embedding[0].total > 1, 'and the embedding total is the note count');
+  assert.doesNotMatch(JSON.stringify(seen.progress), /"stage":"(?!reading|embedding|saving)/, 'no invented stages');
+});
+
+test('and the page shows the chart while it is reading, then puts it away', async () => {
+  if (!page) return t.skip('no browser');
+
+  await paste(await diary());
+  // Watching the attribute rather than polling: the run can be over in a few hundred
+  // milliseconds, and a poll would miss it and then report the feature missing.
+  await page.evaluate(() => {
+    window.__progressSeen = 0;
+    const box = document.getElementById('index-progress');
+    new MutationObserver(() => {
+      if (!box.hidden) window.__progressSeen += 1;
+    }).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  });
+
+  assert.equal(
+    await page.evaluate(() => document.getElementById('index-progress').hidden),
+    true,
+    'the chart must not be on screen before anything is indexed'
+  );
+
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  assert.ok(
+    (await page.evaluate(() => window.__progressSeen)) > 0,
+    'the progress panel never appeared while the document was being read'
+  );
+  // 🔴 AND IT STAYS. Hiding it on success hid it on short documents before anyone could read it —
+  // the whole read of the sample is over in well under a second.
+  assert.equal(
+    await page.evaluate(() => document.getElementById('index-progress').hidden),
+    false,
+    'the chart is put away as soon as it is finished, which is too soon on a short document'
+  );
+  assert.match(
+    await page.evaluate(() => document.getElementById('index-progress-note').innerText),
+    /embedded in|already indexed/,
+    'and it says what happened rather than what is happening'
+  );
+});

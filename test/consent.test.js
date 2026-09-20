@@ -217,9 +217,32 @@ test('the footer links the source and the cookie settings', () => {
   // The source link is what makes a public repository worth having, and the settings
   // door is the only way back to the answer once the bar has gone.
   assert.ok(html.includes(SOURCE), 'the footer must link the public repository');
+  // 🔴 THE LINK TEXT IS THE ADDRESS — the house shape, `llm-demo` being the reference, and
+  // George asked for it here on 20 Sep 2026: *"change this to the repo url, linking to same"*.
+  // A sentence describing a destination is harder to check at a glance than the destination.
+  assert.ok(
+    html.includes('>github.com/nodejavascript/rag-demo</a>'),
+    'the source link should read as the address it goes to'
+  );
   assert.match(html, /id="consentBtn"[^>]*>\s*Cookie settings/, 'and offer the way back to the cookie answer');
-  assert.match(html, /href="#top"/, 'and a way back to the top');
-  assert.ok(html.includes('id="top"'), 'which needs an anchor that exists');
+});
+
+test("the footer carries this site's own privacy policy, as a section of this page", () => {
+  // Part 4 of the house standard: the links line carries the site's own policy — a `#privacy`
+  // section of THIS page, never a `privacy.html` of its own.
+  assert.match(html, /<a href="#privacy">Privacy<\/a>/, 'the footer must link the policy');
+  assert.ok(html.includes('id="privacy"'), 'and the policy must be a section of this page');
+});
+
+test('and NO back to top — it is a control about the page, not about the site', () => {
+  // 🔴 THIS ASSERTION WAS THE OTHER WAY ROUND, AND THAT IS THE POINT. It required
+  // `href="#top"` until 20 Sep 2026, because the footer template carried one — so the test that
+  // was supposed to keep the footer honest was the reason a back-to-top link survived on the one
+  // site built after the rule forbidding it. The house standard (part 4) changed on 19 Sep:
+  // *"remeber this, to remove · back to top from footers"*. **A rule that lives only in a site's
+  // own test is a rule that site can keep getting wrong.** Inverted, so it cannot come back.
+  assert.doesNotMatch(html, /back to top/i, 'no back-to-top link anywhere in the page');
+  assert.doesNotMatch(html, /href="#top"/, 'and no anchor to the top of the page');
 });
 
 test('every in-page footer link points at a section that exists', () => {

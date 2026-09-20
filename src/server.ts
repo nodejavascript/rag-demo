@@ -291,7 +291,13 @@ const server = createServer((request, response) => {
         return;
       }
 
-      if (path === '/api/index' && request.method === 'POST') {
+      if ((path === '/api/index' || path === '/api/index/stream') && request.method === 'POST') {
+        // 🔴 TWO FRONT DOORS, ONE JOB — and the reason is a contract, not a preference. A stream
+        // answers with a sequence of lines and cannot answer with one JSON document, so anything
+        // already reading `/api/index` as JSON (the Workers AI cutover script, for one) must keep
+        // working. Both call the SAME `indexDocument`; only the reporting differs. A second
+        // implementation of the index is the one thing this must never become.
+        const streaming = path === '/api/index/stream';
         if (limited(`index:${client}`, Number.parseInt(process.env.INDEX_PER_HOUR ?? '40', 10), 3600_000)) {
           sendJson(response, 429, { error: 'That is a lot of documents in an hour. Try again a little later.' });
           return;
@@ -314,22 +320,59 @@ const server = createServer((request, response) => {
           : Number.parseInt(String(payload.year), 10);
 
         indexing += 1;
-        try {
-          const result = await indexDocument(store, model, {
-            text: payload.text ?? '',
-            title: payload.title ?? null,
-            sourceName: payload.sourceName ?? null,
-            yearHint: Number.isFinite(year as number) ? (year as number) : null,
+        // The headers go out before the work starts, so the page knows it is talking to a stream
+        // and can begin drawing before there is a result. `no-store` because a cached progress
+        // report is a report about a document that is no longer being read.
+        if (streaming) {
+          response.writeHead(200, {
+            'content-type': 'application/x-ndjson; charset=utf-8',
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
           });
+        }
+        const send = (line: unknown): void => {
+          if (streaming) response.write(`${JSON.stringify(line)}\n`);
+        };
+        try {
+          const result = await indexDocument(
+            store,
+            model,
+            {
+              text: payload.text ?? '',
+              title: payload.title ?? null,
+              sourceName: payload.sourceName ?? null,
+              yearHint: Number.isFinite(year as number) ? (year as number) : null,
+            },
+            (progress) => send({ type: 'progress', ...progress })
+          );
           console.log(
             `indexed doc=${result.document.id} reused=${result.reused} entries=${result.document.stats.entries} chunks=${result.document.stats.chunks} embedMs=${result.document.stats.embeddingMs}`
           );
-          sendJson(response, 200, {
+          const payloadOut = {
             document: result.document,
             ...describe(store, result.document),
             reused: result.reused,
             warnings: result.warnings,
-          });
+          };
+          if (streaming) {
+            send({ type: 'result', ...payloadOut });
+            response.end();
+          } else {
+            sendJson(response, 200, payloadOut);
+          }
+        } catch (error) {
+          // A stream has already sent its status line, so a failure travels as a line of its own
+          // — with the same sentence the JSON endpoint would have carried. **Never a 502**: the
+          // edge replaces that status with its own page and the explanation is destroyed.
+          if (streaming) {
+            send({
+              type: 'error',
+              error: error instanceof Error ? error.message : 'Indexing failed.',
+            });
+            response.end();
+            return;
+          }
+          throw error;
         } finally {
           indexing -= 1;
         }

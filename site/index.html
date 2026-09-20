@@ -25,7 +25,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="rag-demo" />
+    <meta property="og:site_name" content="rag-demo.nodejavascript.com" />
     <meta property="og:title" content="rag-demo.nodejavascript.com" />
     <meta
       property="og:description"
@@ -190,6 +190,17 @@ It works best when the document has its own structure: dates on their own line, 
             <span class="statline" id="index-stat"></span>
           </div>
           <div id="index-error"></div>
+
+          <!-- 🔴 THE CHART THAT RUNS WHILE THE DOCUMENT IS BEING READ (George, 20 Sep 2026:
+               "can we show a chart while its indexing?"). It plots points the server actually
+               reports — notes embedded, against elapsed seconds — so a slow batch looks slow and
+               a stall stops moving. Hidden until work starts, and left up if the run fails,
+               because that is when knowing how far it got matters most. -->
+          <div class="chart-box" id="index-progress" hidden>
+            <h3 id="index-progress-title">Reading it</h3>
+            <p id="index-progress-note">Starting.</p>
+            <canvas id="index-chart" height="128"></canvas>
+          </div>
 
           <p class="statline" id="paste-stat">Nothing pasted yet.</p>
           <div id="health"></div>
@@ -484,9 +495,9 @@ It works best when the document has its own structure: dates on their own line, 
       </div>
       <p class="footer-links">
         <a href="#how">How it works</a> ·
-        <a href="https://github.com/nodejavascript/rag-demo" rel="noopener">The TypeScript source and the tests</a> ·
-        <button id="consentBtn" class="linkish" type="button">Cookie settings</button> ·
-        <a href="#top">Back to top</a>
+        <a href="#privacy">Privacy</a> ·
+        <a href="https://github.com/nodejavascript/rag-demo" rel="noopener">github.com/nodejavascript/rag-demo</a> ·
+        <button id="consentBtn" class="linkish" type="button">Cookie settings</button>
       </p>
       <p class="footer-copy">© 2026 rag-demo.nodejavascript.com. All rights reserved.</p>
     </footer>

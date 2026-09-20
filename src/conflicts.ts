@@ -75,7 +75,18 @@ function looksLikeTheSameWord(a: string, b: string): boolean {
   const wordsA = a.trim().split(/\s+/).length;
   const wordsB = b.trim().split(/\s+/).length;
   if (wordsA !== wordsB) return false;
-  return editDistance(a.toLowerCase(), b.toLowerCase()) <= 2;
+  // 🔴 CASE IS NOT A SECOND WAY OF WRITING A NAME — George, 20 Sep 2026, verbatim: *"Full-Stack
+  // and Full-stack — a name, written two ways so you should be ignoring case for this
+  // disagreement stuff."* He was right, and the arithmetic says why: the edit distance between
+  // the two is computed on lowercased copies, so `Full-Stack` and `Full-stack` give a distance
+  // of **0** and were reported as a spelling disagreement **because of the capitals alone**.
+  // The check exists to catch a difference in SPELLING; case is a difference in typing. Fold it
+  // first and return, so the pair is never even considered. (A hyphen against a space still
+  // counts: `Full-Stack` / `Full Stack` is a distance of 1 and is a genuine second form.)
+  const lowerA = a.toLowerCase();
+  const lowerB = b.toLowerCase();
+  if (lowerA === lowerB) return false;
+  return editDistance(lowerA, lowerB) <= 2;
 }
 
 /**

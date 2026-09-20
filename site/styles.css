@@ -323,6 +323,9 @@ input:focus { border-color: var(--accent-2); }
 
 /* The heat map and the funnel are full width under the two-column chart grid. */
 #heat-box, #funnel-box { margin-top: 14px; }
+/* The chart that runs while the index is being built, in step 1 beside the button. */
+#index-progress { margin-top: 12px; }
+
 
 /* ---------- answer ---------- */
 
@@ -355,13 +358,27 @@ input:focus { border-color: var(--accent-2); }
 
 /* ---------- details ---------- */
 
-.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.details { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+/* 🔴 ONE ROW, SPREAD ACROSS THE FULL WIDTH — George, 20 Sep 2026: *"can we add one more box,
+   then space them out in one row max width"*. This was a grid of `auto-fit minmax(240px, 1fr)`,
+   which at the widths this page actually renders at gave TWO columns — so a third box wrapped
+   onto its own line beneath two half-empty ones, and the row never used the width it had. As a
+   flex row the boxes grow to fill it: two boxes are two halves, three are three thirds, and the
+   count is the only thing that changes. */
 .detail {
+  flex: 1 1 220px;
+  min-width: 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 13px 14px;
 }
+/* The scores chart is a row of its own, and it fills that row. It had no width rule at all, so
+   the canvas fell back to its 300-pixel default inside a box several times wider — which is why
+   it *looked* like the chart was cutting the note labels off: it was drawing 300px wide and the
+   page was stretching the bitmap. */
+.detail.wide { flex-basis: 100%; }
+.details .detail canvas { display: block; width: 100%; }
 .detail h4 { margin: 0 0 9px; font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

@@ -113,3 +113,19 @@ test('and step 2 is named for what it shows, not for what it used to do', () => 
     "step 2 still carries the button's name, which stopped being true when the button moved"
   );
 });
+
+/* ------------------------------------------------------------------ identity */
+
+test('the title and og:site_name ARE the host, not a name for it', () => {
+  // Part 1 of the house standard, and the distinction is the whole rule: the title may not
+  // *carry* the host, it must *be* the host. `og:site_name` is the same fact stated twice, and
+  // it said `rag-demo` — a name for the site — which is the half-right version part 1 exists to
+  // stop. A reader who sees two different names for one thing has been told nothing.
+  const html = site('index.html');
+  assert.match(html, /<title>rag-demo\.nodejavascript\.com<\/title>/);
+  assert.match(
+    html,
+    /<meta property="og:site_name" content="rag-demo\.nodejavascript\.com" \/>/,
+    'og:site_name must be the full host, not the demo name'
+  );
+});

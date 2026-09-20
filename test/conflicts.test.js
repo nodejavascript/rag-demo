@@ -231,3 +231,34 @@ test('nothing at all reports nothing at all', () => {
   const report = analyseConflicts({ entries: [], mentions: noMentions, documentText: '' });
   assert.deepEqual(report, { outOfOrder: [], spelledTwoWays: [], ambiguous: [] });
 });
+
+test('a name written two ways BY CASE ALONE is not a disagreement', () => {
+  // 🔴 George, 20 September 2026, verbatim: *"Full-Stack and Full-stack — a name, written two
+  // ways so you should be ignoring case for this disagreement stuff."*
+  //
+  // He was right, and the arithmetic is why it slipped through: the edit distance is computed on
+  // lowercased copies, so the two forms are a distance of **zero** — identical — and were still
+  // reported as a spelling disagreement, because `a === b` was tested on the forms as written and
+  // then never tested again. Case is not a difference in spelling; it is a difference in typing.
+  //
+  // This is a *negative* assertion, which is the kind that matters most in this file: a panel that
+  // cries disagreement over a capital letter teaches the reader to distrust their own document.
+  const report = analyseConflicts({
+    entries: [],
+    mentions: { places: [], people: [], amounts: [] },
+    documentText: 'Full-Stack Developer, then a Full-stack Developer later the same year.',
+  });
+  assert.deepEqual(report.spelledTwoWays, [], 'case was treated as a second way of writing a name');
+});
+
+test('but a hyphen against a space is still two ways of writing it', () => {
+  // The other half, so the fix above cannot be widened into "ignore punctuation too". A hyphen and
+  // a space are a genuine second form of the same name and a distance of 1 — the check exists for
+  // exactly this and must keep finding it.
+  const report = analyseConflicts({
+    entries: [],
+    mentions: { places: [], people: [], amounts: [] },
+    documentText: 'She worked at Grimsby for a year, and at Grims by was never written.',
+  });
+  assert.equal(report.spelledTwoWays.length, 1, 'a real second form should still be reported');
+});

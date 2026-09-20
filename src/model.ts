@@ -213,12 +213,24 @@ export class Model {
   }
 
   /** Embed a batch, normalised. A batch of zero is a batch of zero, not an error. */
-  async embed(inputs: string[]): Promise<Float64Array[]> {
+  /**
+   * Embed every note, reporting after each batch.
+   *
+   * 🔴 `onBatch` IS WHAT LETS THE PAGE DRAW SOMETHING WHILE A LONG DOCUMENT IS BEING READ.
+   * The batches are real — the provider is given them one at a time — so the count handed back
+   * is **measured, not estimated**: if a batch is slow, the chart is slow, and that is the
+   * honest picture. A progress bar that ticks on a timer would be a lie that also hides a hang.
+   */
+  async embed(
+    inputs: string[],
+    onBatch?: (done: number, total: number) => void
+  ): Promise<Float64Array[]> {
     if (inputs.length === 0) return [];
     const out: Float64Array[] = [];
     for (let i = 0; i < inputs.length; i += this.config.embedBatch) {
       const slice = inputs.slice(i, i + this.config.embedBatch);
       out.push(...(await this.#embedBatch(slice)));
+      onBatch?.(Math.min(i + slice.length, inputs.length), inputs.length);
     }
     return out;
   }

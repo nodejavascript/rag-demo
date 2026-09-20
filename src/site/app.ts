@@ -298,6 +298,22 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
 }
 
 /** Bars lying down: a label, a bar, and the count at the end of it. */
+/** The one font every row label is measured and drawn with. Measuring and drawing must agree. */
+const LABEL_FONT = '11.5px ui-sans-serif, system-ui, sans-serif';
+
+/**
+ * A label cut to the width it is actually allowed, and only then with an ellipsis.
+ *
+ * The old code shortened by a fixed character count, which is a guess about a width: sixteen
+ * characters of `WWW` is a different number of pixels from sixteen of `iii`. This measures.
+ */
+function shortenToFit(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(`${cut}\u2026`).width > width) cut = cut.slice(0, -1);
+  return `${cut}\u2026`;
+}
+
 function drawRows(
   canvas: HTMLCanvasElement,
   data: { label: string; value: number }[],
@@ -314,7 +330,20 @@ function drawRows(
     return;
   }
 
-  const labelW = Math.min(112, Math.max(64, w * 0.31));
+  // 🔴 THE LABEL COLUMN IS MEASURED, NOT GUESSED — AND IT IS NO LONGER CLIPPED AT 17
+  // CHARACTERS. George, 20 Sep 2026: *"the chart cuts off the text. maybe make that max
+  // width"*. Two faults, and both had to go: the scores canvas was drawing itself at 320 CSS
+  // pixels inside a box several times wider (a canvas with no CSS width has the 300-pixel
+  // default, so `fit()` measured that and everything was squeezed), and `drawRows` then hard-
+  // truncated every label to 16 characters plus an ellipsis regardless of the room available.
+  // So a heading like `Full-Stack Software Engineer` arrived as `Full-Stack Softw…` on a
+  // canvas with hundreds of pixels to spare. The widest label now decides the column, up to a
+  // share of the width, and a label is only shortened when it genuinely cannot fit.
+  ctx.textBaseline = 'middle';
+  ctx.font = LABEL_FONT;
+  const widest = data.reduce((most, row) => Math.max(most, ctx.measureText(row.label).width), 0);
+  const labelCap = Math.max(72, w * 0.46);
+  const labelW = Math.min(Math.max(64, widest + 6), labelCap);
   const valueW = 44;
   const plotW = Math.max(20, w - labelW - valueW - 8);
   const rowH = Math.min(24, Math.max(13, (h - 6) / data.length));
@@ -327,10 +356,8 @@ function drawRows(
     const colour = options.colour ?? (COLOURS[at % COLOURS.length] as string);
 
     ctx.fillStyle = '#b2d3d8';
-    ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    const label = row.label.length > 17 ? `${row.label.slice(0, 16)}\u2026` : row.label;
-    ctx.fillText(label, 0, y + rowH / 2);
+    ctx.font = LABEL_FONT;
+    ctx.fillText(shortenToFit(ctx, row.label, labelW), 0, y + rowH / 2);
 
     ctx.fillStyle = '#112d33';
     ctx.beginPath();
@@ -605,6 +632,10 @@ const el = {
   step4: $('step-4'),
   indexButton: $<HTMLButtonElement>('index'),
   indexStat: $('index-stat'),
+  indexProgress: $('index-progress'),
+  indexProgressTitle: $('index-progress-title'),
+  indexProgressNote: $('index-progress-note'),
+  indexChart: $<HTMLCanvasElement>('index-chart'),
   indexHint: $('index-hint'),
   indexError: $('index-error'),
   shape: $('shape'),
@@ -881,19 +912,195 @@ function renderComposition(document: DocumentView): void {
 
 el.indexButton.addEventListener('click', () => void indexNow());
 
+/* ------------------------------------------------------- while it is reading */
+
+/** One measured point: how many notes were embedded, and how long that took. */
+interface ProgressPoint {
+  seconds: number;
+  done: number;
+}
+
+const STAGE_WORDS: Record<string, string> = {
+  reading: 'Splitting it into entries and finding its dates…',
+  embedding: 'Embedding every note so it can be searched by meaning…',
+  saving: 'Saving the index…',
+};
+
+/**
+ * The chart that runs while the document is being read.
+ *
+ * 🔴 IT PLOTS MEASUREMENTS, NOT A CLOCK. George, 20 Sep 2026: *"can we show a chart while its
+ * indexing?"* The points come from the server as batches of notes are actually embedded, so the
+ * line is a record of what happened: a slow batch is a flat stretch, and a stall stops moving
+ * altogether. A bar that filled on a timer would look the same and would be a lie — it would also
+ * keep filling through exactly the failure worth noticing.
+ *
+ * The dashed line is the total, which is known before the first batch is sent — the note count is
+ * settled by the splitter, so the chart has a real denominator rather than a guessed one.
+ */
+function drawProgress(canvas: HTMLCanvasElement, points: ProgressPoint[], total: number): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+
+  const padL = 38;
+  const padR = 12;
+  const padT = 10;
+  const padB = 18;
+  const plotW = Math.max(10, w - padL - padR);
+  const plotH = Math.max(10, h - padT - padB);
+
+  // The axis fits the run it measured. A floor of 0.4 s was wrong in the other direction: a
+  // document whose notes go in as one batch finished in 0.1 s and was drawn as a line crushed
+  // against the left edge, which reads as a chart that failed rather than a fast read.
+  const span = Math.max(0.05, points.length > 0 ? (points[points.length - 1] as ProgressPoint).seconds : 0.05);
+  const maxY = Math.max(1, total);
+  const x = (seconds: number): number => padL + (seconds / span) * plotW;
+  const y = (done: number): number => padT + plotH - (done / maxY) * plotH;
+
+  ctx.font = LABEL_FONT;
+  ctx.textBaseline = 'middle';
+
+  // The floor and the ceiling of the little box the line lives in.
+  ctx.strokeStyle = '#123037';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + plotH + 0.5);
+  ctx.lineTo(padL + plotW, padT + plotH + 0.5);
+  ctx.stroke();
+
+  ctx.fillStyle = '#6f9aa1';
+  ctx.fillText(String(total), 4, y(total));
+  ctx.fillText('0', 4, y(0));
+  ctx.fillText('notes', 4, padT + plotH + 12);
+  ctx.fillText(`${span.toFixed(1)}s`, padL + plotW - 18, padT + plotH + 12);
+
+  // The total, as a target rather than a promise.
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = '#1b434b';
+  ctx.beginPath();
+  ctx.moveTo(padL, y(maxY));
+  ctx.lineTo(padL + plotW, y(maxY));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (points.length === 0) return;
+
+  ctx.strokeStyle = '#5eead4';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  points.forEach((point, at) => {
+    const px = x(point.seconds);
+    const py = y(point.done);
+    if (at === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // The last point, so a chart that has stopped moving looks stopped rather than finished.
+  const last = points[points.length - 1] as ProgressPoint;
+  ctx.fillStyle = '#5eead4';
+  ctx.beginPath();
+  ctx.arc(x(last.seconds), y(last.done), 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.textBaseline = 'alphabetic';
+}
+
+/**
+ * Read an index that arrives as a series of JSON lines.
+ *
+ * 🔴 THE DOOR IS THE SAME ONE EVERY OTHER CALL USES. A missing endpoint, a proxy or an edge error
+ * page all answer with something that is not JSON, and a bare `response.json()` would turn that
+ * into a parser complaint instead of naming what happened — so a line that will not parse is
+ * reported in terms of what it actually is.
+ */
+async function readIndexStream(
+  response: Response,
+  onProgress: (progress: { stage: string; done: number; total: number; ms: number }) => void
+): Promise<Record<string, unknown>> {
+  if (!response.body) throw new Error(`The server answered ${response.status} with no body.`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: Record<string, unknown> | null = null;
+  let failure: string | null = null;
+
+  const handle = (line: string): void => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) return;
+    let event: { type?: string; error?: string } & Record<string, unknown>;
+    try {
+      event = JSON.parse(trimmed) as typeof event;
+    } catch {
+      throw new Error(
+        /^\s*<(!doctype|html)/i.test(trimmed)
+          ? `The server answered with a web page instead of the API, so something in front of it answered: ${trimmed.slice(0, 100)}`
+          : `The server sent a line this page cannot read: ${trimmed.slice(0, 100)}`
+      );
+    }
+    if (event.type === 'progress') onProgress(event as { stage: string; done: number; total: number; ms: number });
+    else if (event.type === 'result') result = event;
+    else if (event.type === 'error') failure = event.error ?? 'Indexing failed.';
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) handle(line);
+  }
+  if (buffer.trim().length > 0) handle(buffer);
+
+  if (failure) throw new Error(failure);
+  if (!result) throw new Error('The server sent no index for that document.');
+  return result;
+}
+
 async function indexNow(): Promise<void> {
   clear(el.indexError);
   el.indexButton.disabled = true;
   el.indexButton.innerHTML = '<span class="spinner"></span>Indexing';
-  el.indexStat.textContent = 'Splitting it up, finding its dates, and embedding every note…';
+
+  const points: ProgressPoint[] = [];
+  let total = 0;
+  let note = STAGE_WORDS.reading as string;
+  el.indexStat.textContent = note;
+  el.indexProgressTitle.textContent = 'Reading it';
+  el.indexProgressNote.textContent = note;
+  el.indexChart.hidden = false;
+  el.indexProgress.hidden = false;
 
   try {
-    const response = await fetch('./api/index', {
+    const response = await fetch('./api/index/stream', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: el.paste.value }),
     });
-    const body = await readJson<{
+    if (!response.ok) throw new Error(`The server answered ${response.status} before it started.`);
+
+    const body = (await readIndexStream(response, (progress) => {
+      if (progress.stage === 'embedding') {
+        // 🔴 ONLY THE EMBEDDING STAGE SETS THE TOTAL, AND THAT WAS A REAL BUG FOR A MINUTE. The
+        // other two stages report `1` of `1` — they are single steps — so taking the total from
+        // whatever arrived last left the chart scaled to 1 while plotting 8 notes, and the axis
+        // read `0` to `1` over a line that had gone off the top. The note count is settled by the
+        // splitter, and only this stage knows it.
+        total = progress.total;
+        points.push({ seconds: progress.ms / 1000, done: progress.done });
+      }
+      note =
+        progress.stage === 'embedding'
+          ? `Embedding note ${progress.done} of ${progress.total}…`
+          : (STAGE_WORDS[progress.stage] ?? 'Working…');
+      el.indexStat.textContent = note;
+      el.indexProgressNote.textContent = `${note} ${(progress.ms / 1000).toFixed(1)} s so far.`;
+      // The box is already on screen, so `fit()` can measure it before anything is drawn.
+      drawProgress(el.indexChart, points, Math.max(total, 1));
+    })) as {
       document?: DocumentView;
       reused?: boolean;
       warnings?: string[];
@@ -901,8 +1108,9 @@ async function indexNow(): Promise<void> {
       kindLabel?: string;
       suggestions?: string[];
       timeline?: { month: string; entries: number }[];
-    }>(response);
-    if (!response.ok || !body.document) throw new Error(body.error ?? `The server answered ${response.status}.`);
+    };
+
+    if (!body.document) throw new Error(body.error ?? 'The server sent no index.');
 
     current = body.document;
     renderShape(body.document, body.timeline);
@@ -914,6 +1122,20 @@ async function indexNow(): Promise<void> {
     el.indexStat.textContent = body.reused
       ? 'This exact text was already indexed, so the existing index was reused.'
       : `Done in ${(body.document.stats.embeddingMs / 1000).toFixed(1)} s.`;
+
+    // 🔴 THE CHART STAYS. It used to be hidden the moment the run finished — and on a short
+    // document the whole read takes under a second, so what George asked to see appeared for less
+    // time than it takes to look at it. It is kept as the record of the run instead: how the
+    // notes went in, and how long each stage took. It sits in step 1, above the results, so it
+    // costs the reader nothing who has moved on to the answer.
+    el.indexProgressTitle.textContent = 'How it read it';
+    el.indexProgressNote.textContent = body.reused
+      ? 'Nothing to do — this exact text was already indexed.'
+      : `${plural(body.document.stats.chunks, 'note')} embedded in ${(body.document.stats.embeddingMs / 1000).toFixed(1)} s. One line per batch, as it happened.`;
+    // 🔴 A CHART WITH NOTHING ON IT IS NOT A CHART. On the reused path no batch is ever sent, so
+    // there are no points and the axes would draw an empty box reading `0` to `1` — which looks
+    // like a measurement that failed. The canvas goes; the sentence stays.
+    el.indexChart.hidden = points.length === 0;
 
     el.shapeWarnings.innerHTML = (body.warnings ?? [])
       .map((warning) => `<div class="warn-box">${esc(warning)}</div>`)
@@ -929,6 +1151,10 @@ async function indexNow(): Promise<void> {
     showError(el.indexError, error instanceof Error ? error.message : 'Indexing failed.');
     el.indexStat.textContent = '';
   } finally {
+    // 🔴 THE CHART IS NOT HIDDEN HERE, AND THAT IS THE POINT. It is the record of how far the work
+    // got — which is the first thing anyone wants to know when something stops, and the one thing
+    // a spinner cannot tell them — and on a short document the whole run is over in well under a
+    // second, so hiding it on success meant hiding it before it could be read.
     // Not simply re-enabled: the length rule still applies, so a failed index leaves the button
     // exactly as available as it was before it was pressed.
     el.indexButton.disabled = el.paste.value.trim().length < MIN_CHARS;
@@ -1271,8 +1497,25 @@ function renderDetails(details: AnswerDetails, sources: Source[]): void {
     );
   }
 
+  // 🔴 THE THIRD BOX. George, 20 Sep 2026: *"The dates it rests on and Places can we add one
+  // more box, then space them out in one row max width"*. Dates and places are only there when
+  // the answer happens to rest on them, so a question about the weather gave two boxes with a
+  // gap where the third belonged. **The notes themselves are always there** — an answer with no
+  // notes is a refusal — so this box always has something true in it, and it is the next thing a
+  // reader wants after the dates: which notes, exactly, this came from.
+  if (sources.length > 0) {
+    boxes.push(
+      detailBox(
+        'The notes it used',
+        `<div class="chips">${sources
+          .map((source) => `<span class="chip">${esc(source.label)}</span>`)
+          .join('')}</div>`
+      )
+    );
+  }
+
   boxes.push(
-    `<div class="detail" style="grid-column:1/-1">
+    `<div class="detail wide">
       <h4>How well each note matched</h4>
       <p style="margin:0 0 8px;font-size:12.5px;color:#7ba1a8">${
         sources.some((s) => s.rerank !== null)
