@@ -17,7 +17,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildFunnel, buildMentionMonths, buildSpine, continuousMonths, emptyMonths } from '../dist/charts.js';
+import {
+  axisMonths,
+  buildFunnel,
+  buildMentionMonths,
+  buildSpans,
+  buildSpine,
+  continuousMonths,
+  emptyMonths,
+} from '../dist/charts.js';
 
 /* ---------------------------------------------------------------- the month series */
 
@@ -195,4 +203,108 @@ test('a refusal stops the funnel where the refusal was decided', () => {
   assert.equal(stages.length, 2, 'the document, and the stage that said no');
   assert.equal(stages[1].notes, 0);
   assert.match(stages[1].note, /no model was called/i);
+});
+
+/* -------------------------------------------------------------- the timeline */
+
+test('a bar runs from the start an entry states to the end it states', () => {
+  // 🔴 THE CLAIM THIS CHART MAKES, IN ONE ASSERTION. George, 20 Sep 2026, on his own resume: *"can
+  // you make the width of the bar equal to the start and end for this timeline?? … i suppose i
+  // should assume it will not always be a resume."* A resume states periods; the chart used to
+  // count them into month buckets, so a career was three lonely months and the width meant nothing.
+  const spans = buildSpans([
+    { label: 'Senior Software Engineer, First Canadian Title', month: '2021-07', endMonth: '2026-09' },
+    { label: 'Software Engineer, Utherverse Digital', month: '2018-03', endMonth: '2021-06' },
+    { label: 'Developer, IOU Concepts', month: '2017-01', endMonth: '2018-02' },
+  ]);
+
+  assert.equal(spans.hasPeriods, true);
+  assert.equal(spans.pointsOnly, false);
+  assert.equal(spans.from, '2017-01', 'the axis starts where the earliest entry starts');
+  assert.equal(spans.to, '2026-09', 'and ends where the latest one ends');
+  assert.equal(axisMonths(spans), 117, 'and covers every month between, inclusively');
+  assert.deepEqual(
+    spans.spans.map((span) => [span.from, span.to]),
+    [
+      ['2021-07', '2026-09'],
+      ['2018-03', '2021-06'],
+      ['2017-01', '2018-02'],
+    ],
+    'each bar keeps the two dates exactly as the entry wrote them'
+  );
+  // The width IS the period: `July 2021 to September 2026` is 63 months of axis, not one slot.
+  const months = (from, to) => {
+    const [fy, fm] = from.split('-').map(Number);
+    const [ty, tm] = to.split('-').map(Number);
+    return ty * 12 + tm - (fy * 12 + fm) + 1;
+  };
+  assert.deepEqual(spans.spans.map((span) => months(span.from, span.to)), [63, 40, 14]);
+  assert.ok(spans.spans.every((span) => !span.point), 'a stated period is a bar, never a tick');
+});
+
+test('a diary stays points, and they all share one row', () => {
+  // The other half of "it will not always be a resume": days have no length, so two of them cannot
+  // overlap, and giving each its own row would turn nine diary entries into nine empty rows.
+  const spans = buildSpans([
+    { label: '4 March 2026', month: '2026-03' },
+    { label: '6 March 2026', month: '2026-03' },
+    { label: '17 April 2026', month: '2026-04' },
+  ]);
+  assert.equal(spans.pointsOnly, true);
+  assert.equal(spans.hasPeriods, false);
+  assert.equal(spans.lanes, 1, 'one row of ticks');
+  assert.deepEqual([...new Set(spans.spans.map((span) => span.lane))], [0]);
+  assert.ok(spans.spans.every((span) => span.point));
+  assert.equal(spans.from, '2026-03');
+  assert.equal(spans.to, '2026-04');
+});
+
+test('two periods that overlap in time get a row each', () => {
+  // 🔴 Two bars drawn through each other would say the document did two things at once, which is a
+  // claim this app must never make by accident.
+  const spans = buildSpans([
+    { label: 'Job A', month: '2020-01', endMonth: '2022-06' },
+    { label: 'Job B', month: '2021-01', endMonth: '2023-01' },
+  ]);
+  assert.deepEqual(spans.spans.map((span) => span.lane), [0, 1], 'the second overlaps the first');
+  assert.equal(spans.lanes, 2);
+
+  // And the reverse: two that do NOT overlap may share a row, so a tidy career is one line of bars.
+  const sequential = buildSpans([
+    { label: 'Then', month: '2010-01', endMonth: '2012-12' },
+    { label: 'Now', month: '2013-01', endMonth: '2015-06' },
+  ]);
+  assert.deepEqual(sequential.spans.map((span) => span.lane), [0, 0], 'they never overlap');
+  assert.equal(sequential.lanes, 1);
+});
+
+test('an open-ended period runs to the end of what the document dates, and says so', () => {
+  // `July 2021 to Present` has no end date. The bar runs to the axis end — the last thing THE
+  // DOCUMENT dates, never today — and the flag is what lets the caption say which bars did that.
+  const spans = buildSpans([
+    { label: 'Still here', month: '2021-07', openEnded: true },
+    { label: 'Before that', month: '2017-01', endMonth: '2021-06' },
+  ]);
+  const open = spans.spans.find((span) => span.label === 'Still here');
+  assert.equal(open.openEnded, true);
+  assert.equal(open.to, '2021-07', 'no end month is invented — it is drawn to the axis end instead');
+  assert.equal(spans.to, '2021-07');
+  assert.equal(spans.spans.find((span) => span.label === 'Before that').openEnded, false);
+});
+
+test('an entry with no placeable month is left off the timeline entirely', () => {
+  // A heading with no date on it is not a point in time, and a bar for it would be an invention.
+  const spans = buildSpans([
+    { label: 'SKILLS', month: null },
+    { label: 'Real job', month: '2020-05', endMonth: '2021-05' },
+  ]);
+  assert.equal(spans.spans.length, 1);
+  assert.equal(spans.spans[0].label, 'Real job');
+});
+
+test('and a document with no dates at all yields no timeline rather than an empty axis', () => {
+  const spans = buildSpans([{ label: 'Terms', month: null }, { label: 'More terms', month: null }]);
+  assert.deepEqual(spans.spans, []);
+  assert.equal(spans.from, '', 'no axis is claimed');
+  assert.equal(axisMonths(spans), 0);
 });

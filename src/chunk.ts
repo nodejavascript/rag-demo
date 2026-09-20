@@ -15,7 +15,7 @@
  * document of short standalone lines is therefore ONE entry, not fifty empty ones.
  */
 
-import { dominantYear, entryDate, entryMonth, findDates } from './dates.js';
+import { dominantYear, entryDate, entryMonth, entryPeriod, findDates } from './dates.js';
 import { findAmounts, findPeople, findPlaces, imagesByEntry, tally } from './enrich.js';
 import { blocks, cleanHeading, endsInPunctuation, isBodyOf, isSectionName, lines, looksLikeHeadingCandidate } from './text.js';
 import type { Chunk, Entry, ImageRef, IndexStats, Mention, NoteMeta } from './types.js';
@@ -208,6 +208,10 @@ export function build(text: string, yearHint: number | null, imagesIn: ImageRef[
       ambiguousDate: hit?.ambiguous ?? false,
       monthOnly: hit?.monthOnly ?? false,
       month: entryMonth(body, year),
+      // The other half of the entry's dates: the END of a period, when one is written with a range
+      // word. Read from the same body, by the same parser, so the start and the end cannot
+      // disagree about what the document says.
+      ...entryPeriod(body, year),
       text: body,
       start: entry.start,
       end: entry.end,
@@ -310,6 +314,8 @@ function finish(entry: { heading: string | null; text: string; start: number; en
     ambiguousDate: false,
     monthOnly: false,
     month: null,
+    endMonth: null,
+    openEnded: false,
     text: entry.text,
     start: entry.start,
     end: entry.end,

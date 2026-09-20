@@ -85,6 +85,29 @@ interface Spine {
   total: number;
 }
 
+/**
+ * The timeline the server built from the document's own entries.
+ *
+ * 🔴 A RESUME IS NOT A DIARY, AND THE PAGE NEVER HAS TO KNOW WHICH IT IS HOLDING. A role states a
+ * period and gets a bar whose width IS that period; a diary entry states one day and gets a tick.
+ * `pointsOnly` and `hasPeriods` exist only so the caption can describe what is actually there.
+ */
+interface Spans {
+  spans: {
+    label: string;
+    from: string;
+    to: string;
+    openEnded: boolean;
+    point: boolean;
+    lane: number;
+  }[];
+  from: string;
+  to: string;
+  lanes: number;
+  pointsOnly: boolean;
+  hasPeriods: boolean;
+}
+
 interface Answer {
   question: string;
   raw: string;
@@ -198,6 +221,140 @@ interface Canvas {
 }
 
 /** Size the backing store to the device pixel ratio, so lines are not furry. */
+/**
+ * The timeline: the width of a bar IS the period the entry states.
+ *
+ * 🔴 WHAT THIS REPLACED, AND WHY. The old chart counted entries into month buckets — one column per
+ * month — so a resume read as three lonely months (`July 2021`, `March 2018`, `January 2017`),
+ * every bar the same width, and the width meant nothing. George, 20 Sep 2026, on his own resume:
+ * *"can you make the width of the bar equal to the start and end for this timeline?? … or, i mean
+ * this is for a resume, i suppose i should assume it will not always be a resume."*
+ *
+ * So it is a time axis: x is real time, a bar runs from what an entry states as its start to what it
+ * states as its end, and an entry that states one day — a diary — is a tick at that day. **One chart,
+ * both documents, and no mode switch**, because the document is never asked what kind it is.
+ */
+function drawSpans(canvas: HTMLCanvasElement, spans: Spans): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+
+  const pad = { top: 14, right: 10, bottom: 24, left: 10 };
+  const plotW = Math.max(20, w - pad.left - pad.right);
+
+  if (spans.spans.length === 0) {
+    ctx.fillStyle = '#6f9aa1';
+    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('Nothing in this document can be placed on a timeline.', pad.left, h / 2);
+    return;
+  }
+
+  const axisFrom = monthIndex(spans.from);
+  const axisTo = monthIndex(spans.to);
+  const axisLength = Math.max(1, axisTo - axisFrom);
+  const x = (month: string): number => {
+    const at = monthIndex(month);
+    return pad.left + ((at - axisFrom) / axisLength) * plotW;
+  };
+
+  const rows = Math.max(1, spans.lanes);
+  const axisY = h - pad.bottom;
+  const rowH = Math.min(30, Math.max(9, (axisY - pad.top - 6) / rows));
+
+  // The axis itself, so the reader can see that x is time and where the years fall.
+  ctx.strokeStyle = '#1b434b';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, axisY + 0.5);
+  ctx.lineTo(pad.left + plotW, axisY + 0.5);
+  ctx.stroke();
+
+  // 🔴 YEAR LINES, NOT MONTH COLUMNS. A 195-month axis has 195 columns; what a reader can actually
+  // use is where the years are. One line per January inside the span, labelled with the year.
+  const firstYear = Math.ceil(Number(spans.from.slice(0, 4)));
+  const lastYear = Number(spans.to.slice(0, 4));
+  const years = lastYear - firstYear + 1;
+  const yearStep = Math.max(1, Math.ceil(years / Math.max(1, Math.floor(plotW / 54))));
+  ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
+  for (let year = firstYear; year <= lastYear; year += yearStep) {
+    const at = `${year}-01`;
+    if (at < spans.from) continue;
+    const lineX = x(at);
+    ctx.strokeStyle = '#12323a';
+    ctx.beginPath();
+    ctx.moveTo(lineX, pad.top - 4);
+    ctx.lineTo(lineX, axisY);
+    ctx.stroke();
+    ctx.fillStyle = '#7ba1a8';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(year), lineX, axisY + 14);
+    ctx.textAlign = 'left';
+  }
+
+  for (const span of spans.spans) {
+    const colour = COLOURS[span.lane % COLOURS.length] as string;
+    const startX = x(span.from);
+    const endX = x(span.to);
+    const y = pad.top + span.lane * rowH;
+    const barH = Math.max(6, rowH - 8);
+
+    if (span.point) {
+      // A day has no length, so it is drawn where it is and no wider than it can be defended:
+      // one month of the axis, and never more than a couple of pixels.
+      const tick = Math.max(2, Math.min(4, plotW / (axisLength + 1)));
+      ctx.fillStyle = colour;
+      ctx.beginPath();
+      ctx.roundRect(startX - tick / 2, y + 1, tick, barH, 1.5);
+      ctx.fill();
+      continue;
+    }
+
+    // +1 month, because a period that runs `January 2017 to February 2018` includes February.
+    const width = Math.max(3, endX - startX + plotW / (axisLength + 1));
+    const gradient = ctx.createLinearGradient(startX, 0, startX + width, 0);
+    gradient.addColorStop(0, colour);
+    gradient.addColorStop(1, `${colour}55`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.roundRect(startX, y + 1, width, barH, Math.min(4, barH / 2));
+    ctx.fill();
+    // 🔴 THE EDGE IS STROKED IN THE SOLID COLOUR, AND THAT IS NOT DECORATION. The fill fades to
+    // about a third at its right end, so the bar's own right edge is the one place its width
+    // cannot be measured — and the width is the entire claim this chart makes. A solid 1px edge
+    // makes the bar's start and end exact, which is what the end-to-end test reads off the pixels.
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // 🔴 THE LABEL GOES INSIDE THE BAR WHEN IT FITS, BESIDE IT WHEN THERE IS ROOM, AND SHORTENED
+    // INSIDE IT WHEN THERE IS NEITHER. The first version only chose between the first two, and the
+    // longest period is usually the one that ENDS AT THE RIGHT EDGE — so its label was drawn past
+    // the canvas and vanished. Seen on the resume: `Senior Software Engineer, First Canadian Title`
+    // was 250px in a 231px bar starting at x 209 of a 450px canvas, so it was laid out at x 450 and
+    // nothing was painted at all. A bar with no label is worse than a shortened one.
+    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    const label = span.openEnded ? `${span.label} — still running` : span.label;
+    const fitsInside = ctx.measureText(label).width <= width - 12;
+    const roomBeside = startX + width + 6 + ctx.measureText(label).width < pad.left + plotW;
+    if (fitsInside || !roomBeside) {
+      ctx.fillStyle = '#04221f';
+      ctx.fillText(shortenToFit(ctx, label, Math.max(24, width - 12)), startX + 6, y + rowH / 2);
+    } else {
+      ctx.fillStyle = '#b2d3d8';
+      ctx.fillText(label, startX + width + 5, y + rowH / 2);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+/** `YYYY-MM` as a month number, so a position on the axis is real time and not a bucket index. */
+function monthIndex(month: string): number {
+  const [year, part] = month.split('-').map((value) => Number(value));
+  if (!year || !part) return 0;
+  return year * 12 + (part - 1);
+}
+
 function fit(canvas: HTMLCanvasElement): Canvas | null {
   const ratio = Math.min(window.devicePixelRatio || 1, 2);  const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 320;
   const h = Number(canvas.getAttribute('height') ?? 190);
@@ -222,81 +379,7 @@ function fit(canvas: HTMLCanvasElement): Canvas | null {
  */
 const COLOURS = ['#5eead4', '#14b8a6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#f472b6', '#22d3ee'];
 
-/**
- * Bars standing up: one column per month, the tallest scaled to the box.
- *
- * Labels are skipped rather than overlapped when there is not room — a chart whose
- * axis cannot be read is worse than one with fewer ticks on it.
- */
-function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: number }[]): void {
-  const surface = fit(canvas);
-  if (!surface) return;
-  const { ctx, w, h } = surface;
-  const pad = { top: 16, right: 8, bottom: 26, left: 8 };
-  const plotW = w - pad.left - pad.right;
-  const plotH = h - pad.top - pad.bottom;
 
-  if (data.length === 0) {
-    ctx.fillStyle = '#6f9aa1';
-    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('No dates were found, so there is nothing to plot.', pad.left, h / 2);
-    return;
-  }
-
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const gap = data.length > 26 ? 2 : 6;
-  const slot = plotW / data.length;
-  const barW = Math.max(2, slot - gap);
-
-  data.forEach((point, at) => {
-    const x = pad.left + at * slot + gap / 2;
-
-    // 🔴 A MONTH WITH NOTHING IN IT IS NOT A SHORT BAR. `perMonth` now arrives with the empty
-    // months filled in, and drawing `Math.max(2, 0)` would give silence the same 2-pixel
-    // stub as a real but tiny month — the two would be indistinguishable on the chart, which
-    // is the opposite of the reason the gap was filled in. So a zero is drawn as a single
-    // muted tick on the baseline: unmistakably "nothing here".
-    if (point.value === 0) {
-      ctx.fillStyle = '#2b4a52';
-      ctx.fillRect(x, pad.top + plotH - 1, Math.max(1, barW), 1);
-      return;
-    }
-
-    const barH = Math.max(2, (point.value / max) * plotH);
-    const y = pad.top + plotH - barH;
-    const colour = COLOURS[at % COLOURS.length] as string;
-    const gradient = ctx.createLinearGradient(0, y, 0, y + barH);
-    gradient.addColorStop(0, colour);
-    gradient.addColorStop(1, `${colour}44`);
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.roundRect(x, y, barW, barH, Math.min(3, barW / 2));
-    ctx.fill();
-
-    if (point.value === max && barW > 12) {
-      ctx.fillStyle = '#e6f6f8';
-      ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(point.value), x + barW / 2, y - 5);
-      ctx.textAlign = 'left';
-    }
-  });
-
-  // Axis labels, at most one in every 34 pixels of width.
-  const every = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor(plotW / 34))));
-  ctx.fillStyle = '#7ba1a8';
-  ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
-  data.forEach((point, at) => {
-    if (at % every !== 0 && at !== data.length - 1) return;
-    const x = pad.left + at * slot + slot / 2;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.fillText(point.label, x, h - 8);
-    ctx.restore();
-  });
-}
-
-/** Bars lying down: a label, a bar, and the count at the end of it. */
 /**
  * The one font every row label is measured and drawn with. Measuring and drawing must agree. */
 const LABEL_FONT = '11.5px ui-sans-serif, system-ui, sans-serif';
@@ -636,6 +719,8 @@ function renderFunnel(stages: Answer['funnel']): void {
 /* ------------------------------------------------------------------ state */
 
 let current: DocumentView | null = null;
+/** The span timeline for the document on screen, kept so a resize can redraw the same data. */
+let currentSpans: Spans | null = null;
 
 /** Who and what the document mentions, laid out over its own months. */
 interface MentionMonths {
@@ -890,7 +975,46 @@ function card(key: string, value: string, unit: string): string {
   return `<div class="card"><div class="k">${esc(key)}</div><div class="v">${esc(value)}</div><div class="u">${esc(unit)}</div></div>`;
 }
 
-function renderShape(document: DocumentView, timeline?: { month: string; entries: number }[]): void {
+/** `2026-03` in words, for a caption — never a date, because no day is being claimed. */
+function monthWords(month: string): string {
+  const [year, part] = month.split('-').map((value) => Number(value));
+  if (!year || !part) return month;
+  return `${MONTH_WORDS[part - 1] ?? part} ${year}`;
+}
+
+const MONTH_WORDS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * How long the timeline actually runs, in words — the figure the Span card shows.
+ *
+ * Measured over the span axis rather than over the months that happen to hold an entry: a career
+ * with three roles covers years, and `3 months` beside a nine-year timeline is a number
+ * contradicting the chart it sits above.
+ */
+function spanPhrase(spans: Spans | undefined, stats: DocumentView['stats']): string {
+  if (!spans || spans.spans.length === 0) {
+    return stats.months > 0 ? plural(stats.months, 'month') : '—';
+  }
+  const months = Math.round(
+    (Number(spans.to.slice(0, 4)) * 12 + Number(spans.to.slice(5, 7))) -
+      (Number(spans.from.slice(0, 4)) * 12 + Number(spans.from.slice(5, 7))) +
+      1
+  );
+  if (months < 24) return plural(months, 'month');
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return rest === 0 ? plural(years, 'year') : `${plural(years, 'year')} ${plural(rest, 'month')}`;
+}
+
+function spanNote(spans: Spans | undefined, stats: DocumentView['stats']): string {
+  if (!spans || spans.spans.length === 0) return stats.firstDate ?? 'no complete dates';
+  return `from ${monthWords(spans.from)}`;
+}
+
+function renderShape(document: DocumentView, timeline: { month: string; entries: number }[] | undefined, spans: Spans | undefined): void {
   const stats = document.stats;
   el.shape.hidden = false;
   el.shapeTitle.innerHTML =
@@ -910,26 +1034,65 @@ function renderShape(document: DocumentView, timeline?: { month: string; entries
       `${(stats.datedEntries + stats.monthPrecision).toLocaleString()}`,
       stats.monthPrecision > 0 ? `on the timeline, ${stats.monthPrecision} by month only` : 'on the timeline'
     ),
-    card('Span', stats.months > 0 ? plural(stats.months, 'month') : '—', stats.firstDate ?? 'no complete dates'),
+    // The span is what the timeline UNDER the cards actually shows, so it is measured over the
+    // same axis: a resume runs for years even though only three of its months hold an entry.
+    // 🔴 It used to report the count of months containing an entry, which for a career read
+    // `3 months` beside a nine-year timeline — a figure contradicting the chart next to it.
+    card('Span', spanPhrase(spans, stats), spanNote(spans, stats)),
   ].join('');
 
-  const series = (timeline && timeline.length > 0 ? timeline : stats.perMonth).map((point) => ({
-    label: point.month.slice(2),
-    value: point.entries,
-  }));
-  painting(el.timeline, () => drawColumns(el.timeline, series));
-  const quiet = series.filter((point) => point.value === 0).length;
-  el.timelineNote.textContent =
-    series.length > 0
-      ? `Entries per month across ${plural(series.length, 'month')}` +
-        (stats.firstDate ? `, from ${stats.firstDate} to ${stats.lastDate}` : '') +
-        (quiet > 0
-          ? `. ${plural(quiet, 'month')} in that span hold nothing at all, and are drawn as flat marks rather than left out.`
-          : '.') +
-        (stats.monthPrecision > 0
-          ? ` ${plural(stats.monthPrecision, 'entry', 'entries')} wrote a month and a year but no day, so it sits on the month and no particular day is claimed.`
-          : ' Counted by the program, over the whole document.')
-      : 'Nothing in this document can be placed on a timeline — no entry writes a month and a year together.';
+  // 🔴 THE TIMELINE IS DRAWN FROM THE PERIODS, NOT FROM MONTH BUCKETS. See `drawSpans` for why:
+  // a resume states periods and a diary states days, and one chart draws both without being told
+  // which it has. The month counts are still needed — they are how the caption can say how much of
+  // the span holds NOTHING, which is the one thing a bar chart cannot show.
+  const quiet = (timeline && timeline.length > 0 ? timeline : stats.perMonth).filter(
+    (point) => point.entries === 0
+  ).length;
+  currentSpans = spans ?? null;
+  if (spans && spans.spans.length > 0) {
+    painting(el.timeline, () => drawSpans(el.timeline, spans));
+    const periods = spans.spans.filter((span) => !span.point).length;
+    const points = spans.spans.length - periods;
+    // 🔴 SENTENCES, JOINED WITH SPACES — NOT CONCATENATED FRAGMENTS. The first version built the
+    // caption from pieces and joined them with an empty string, so it read *"12 periods and 1
+    // single datebetween June 1994 and September 2026"* on the live page. Seen in a screenshot,
+    // fixed, and the shape of this list is what stops it coming back.
+    const parts: string[] = [];
+    const between = `between ${monthWords(spans.from)} and ${monthWords(spans.to)}`;
+    parts.push(
+      !spans.hasPeriods
+        ? `${plural(spans.spans.length, 'entry', 'entries')} ${between}, each one a single date.`
+        : points > 0
+          ? // Only mentioned when there IS one: `3 periods and 0 single dates` is a sentence nobody
+            // wants to read, and the live run printed exactly that before this line existed.
+            `${plural(periods, 'period')} and ${plural(points, 'single date')} ${between}.`
+          : `${plural(periods, 'period')} ${between}.`
+    );
+    parts.push(
+      spans.hasPeriods
+        ? 'Each bar runs from the start an entry states to the end it states, so its width is the time that entry covers.'
+        : 'Each mark is one entry, at its own date.'
+    );
+    if (spans.spans.some((span) => span.openEnded)) {
+      parts.push(
+        'A period written as still running is drawn to the last thing the document dates, because that is as far as this document can say.'
+      );
+    }
+    if (quiet > 0) {
+      parts.push(
+        `${plural(quiet, 'month')} in that span hold nothing at all, which is why the bars have gaps rather than being moved together.`
+      );
+    }
+    parts.push(
+      stats.monthPrecision > 0
+        ? `${plural(stats.monthPrecision, 'entry', 'entries')} wrote a month and a year but no day, so it sits on the month and no particular day is claimed.`
+        : 'Counted by the program, over the whole document.'
+    );
+    el.timelineNote.textContent = parts.join(' ');
+  } else {
+    el.timelineNote.textContent =
+      'Nothing in this document can be placed on a timeline — no entry writes a month and a year together.';
+  }
 
   void renderComposition(document);
   renderHeat(document.mentions.byMonth);
@@ -1149,6 +1312,7 @@ async function indexNow(): Promise<void> {
       kindLabel?: string;
       suggestions?: string[];
       timeline?: { month: string; entries: number }[];
+      spans?: Spans;
     };
 
     if (!body.document) throw new Error(body.error ?? 'The server sent no index.');
@@ -1160,7 +1324,7 @@ async function indexNow(): Promise<void> {
     // Step 2 is the READING — the panel that came back — so it appears when there is something to
     // show, not when enough text has been typed.
     el.step2.hidden = false;
-    renderShape(body.document, body.timeline);
+    renderShape(body.document, body.timeline, body.spans);
     useSuggestions(body.kindLabel, body.suggestions);
 
     el.indexStat.textContent = body.reused
@@ -1598,7 +1762,7 @@ window.addEventListener('resize', () => {
   window.clearTimeout(redraw);
   redraw = window.setTimeout(() => {
     if (current) {
-      drawColumns(el.timeline, current.stats.perMonth.map((p) => ({ label: p.month.slice(2), value: p.entries })));
+      if (currentSpans) painting(el.timeline, () => drawSpans(el.timeline, currentSpans as Spans));
       renderComposition(current);
     }
   }, 180);

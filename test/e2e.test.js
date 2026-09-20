@@ -797,3 +797,133 @@ test('the page never moves the reader on its own', async () => {
   const bundle = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
   assert.doesNotMatch(bundle, /scrollIntoView/, 'the page scrolls itself somewhere again');
 });
+
+test('the width of a bar IS the period the entry states', async (t) => {
+  if (!page) return t.skip('no browser');
+
+  // 🔴 GEORGE'S ASK, MEASURED OFF THE PIXELS. 20 Sep 2026, on his own resume: *"can you make the
+  // width of the bar equal to the start and end for this timeline??"* — so this does not check that
+  // a chart was drawn. It reads the canvas, finds each bar's own edges, and compares the widths
+  // against the periods the document states. The bars are stroked in a solid colour precisely so
+  // their two ends are exact in the pixels; the faded fill would have made the right edge
+  // unmeasurable.
+  // The BUILT-IN sample, not the fixture: its three roles state `July 2021 to September 2026`,
+  // `March 2018 to June 2021` and `January 2017 to February 2018` — 63, 40 and 14 months — so the
+  // widths this expects are arithmetic rather than a number copied from a screenshot.
+  const sample = await (await fetch(`${BASE}/api/samples/resume`)).json();
+  await paste(sample.text);
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  const found = await page.evaluate(() => {
+    const canvas = document.getElementById('timeline');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const px = ctx.getImageData(0, 0, W, H).data;
+    const at = (x, y) => {
+      const i = (y * W + x) * 4;
+      return [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    };
+
+    // 🔴 THE AXIS IS FOUND BY GEOMETRY, NOT BY COLOUR — AND THAT WAS LEARNED THE HARD WAY.
+    // A colour test for the axis line failed (it is antialiased over two rows, so neither row is
+    // exactly the axis colour), the scan then ran down over the year labels underneath it, and the
+    // antialiased edges of that text are dark enough to pass any bar-colour test — **12 rows
+    // reported for 3 bars.** The axis is simply the longest run of painted pixels on the canvas, so
+    // that is what is looked for, and everything below it is out of the scan.
+    let axisY = H;
+    for (let y = 0; y < H; y += 1) {
+      let painted = 0;
+      for (let x = 0; x < W; x += 1) if (at(x, y)[3] > 0) painted += 1;
+      if (painted > W * 0.9) axisY = y;
+    }
+
+    // 🔴 A BAR PIXEL IS `r < 110 AND g > 170`, AND BOTH HALVES OF THAT WERE MEASURED. The three bar
+    // colours are `#5eead4` (94, 234), `#14b8a6` (20, 184) and `#38bdf8` (56, 189) — all with a
+    // bright green. Every text colour on the canvas is PALE: `#b2d3d8` (178, 211) and `#7ba1a8`
+    // (123, 161). A threshold on the red channel alone is not enough, because ANTIALIASED text
+    // pixels blend toward the dark panel and pass it: at about 55% the label lands at (101, 127),
+    // which was counted, and a label drawn BESIDE a bar then extended that bar's measured width
+    // from 152px to 306px — it made the check report a bar 40 months long as the widest on the
+    // chart. Requiring a bright green as well excludes every blend of a pale colour: to reach
+    // g > 170 the label must be at least ~78% opaque, and at that point its red is 141.
+    const isBar = (r, g, b, a) => a > 0 && r < 110 && g > 170 && b > 150;
+
+    const bands = [];
+    for (let y = 0; y < axisY; y += 1) {
+      let min = -1;
+      let max = -1;
+      let count = 0;
+      for (let x = 0; x < W; x += 1) {
+        const [r, g, b, a] = at(x, y);
+        if (!isBar(r, g, b, a)) continue;
+        if (min === -1) min = x;
+        max = x;
+        count += 1;
+      }
+      if (count === 0) continue;
+      const last = bands[bands.length - 1];
+      if (last && y === last.bottom + 1) {
+        last.bottom = y;
+        last.min = Math.min(last.min, min);
+        last.max = Math.max(last.max, max);
+      } else {
+        bands.push({ top: y, bottom: y, min, max });
+      }
+    }
+
+    return {
+      css: Math.round(canvas.getBoundingClientRect().width),
+      bitmap: W,
+      axisY,
+      height: H,
+      bands: bands.map((band) => ({ top: band.top, bottom: band.bottom, left: band.min, width: band.max - band.min + 1 })),
+      note: document.getElementById('timeline-note').innerText,
+    };
+  });
+
+  assert.equal(found.bitmap, found.css, 'the canvas must be drawn at the width it is shown');
+  assert.equal(found.bands.length, 3, 'three roles, three rows — one bar each');
+
+  // The document states 63, 40 and 14 months. In document order: the most recent role first.
+  const expected = [63, 40, 14];
+  const widest = Math.max(...found.bands.map((band) => band.width));
+  found.bands.forEach((band, at) => {
+    const share = band.width / widest;
+    const wanted = expected[at] / Math.max(...expected);
+    assert.ok(
+      Math.abs(share - wanted) < 0.06,
+      `bar ${at} is ${Math.round(share * 100)}% of the widest and should be ${Math.round(wanted * 100)}% — ` +
+        `a bar's width must be the period it states, not a slot (${JSON.stringify(found.bands)})`
+    );
+  });
+
+  // And they are in time order across the rows: the most recent role starts furthest right.
+  assert.ok(
+    found.bands[0].left > found.bands[1].left && found.bands[1].left > found.bands[2].left,
+    `the bars are not placed by date: ${found.bands.map((band) => band.left).join(', ')}`
+  );
+  assert.match(found.note, /period/i, 'and the caption says what the bars are');
+});
+
+test('and a diary draws days as marks instead of bars', async (t) => {
+  if (!page) return t.skip('no browser');
+  // The other half of *"i suppose i should assume it will not always be a resume"*: the same chart,
+  // no mode switch, a document whose entries are single days.
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  const drawn = await page.evaluate(() => {
+    const canvas = document.getElementById('timeline');
+    const ctx = canvas.getContext('2d');
+    const px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let painted = 0;
+    for (let i = 3; i < px.length; i += 4) if (px[i] > 0) painted += 1;
+    return { painted, note: document.getElementById('timeline-note').innerText };
+  });
+  assert.ok(drawn.painted > 200, 'the timeline must have something on it');
+  assert.match(drawn.note, /each mark is one entry/i, 'and the caption must say these are single dates');
+  assert.doesNotMatch(drawn.note, /period/i, 'a diary has no periods, and must not be described as if it had');
+});

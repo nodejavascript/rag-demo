@@ -31,7 +31,7 @@ import { Store } from './store.js';
 import { AppError, type DocumentView } from './types.js';
 import { SAMPLES } from './samples.js';
 import { describeDocument } from './kinds.js';
-import { continuousMonths } from './charts.js';
+import { axisMonths, buildSpans, continuousMonths, type Spans } from './charts.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '4500', 10);
 const HOST = process.env.HOST ?? '127.0.0.1';
@@ -57,8 +57,23 @@ function describe(store: Store, document: DocumentView): {
   kindLabel: string;
   suggestions: string[];
   timeline: { month: string; entries: number }[];
+  spans: Spans;
+  /** How many months the span axis covers — the denominator of every bar's width. */
+  spanMonths: number;
 } {
   const described = describeDocument(store.documentText(document.id), document.stats.datedEntries);
+  // 🔴 BUILT FROM THE ENTRIES THEMSELVES, ON THE WAY OUT, IN ONE PLACE — the same rule as the kind
+  // and the timeline above, and for the same reason: the panel that lists the periods and the chart
+  // that draws them must not be able to disagree about the same document. The entries are already
+  // on disk, so nothing is recomputed that the indexer settled.
+  const spans = buildSpans(
+    store.entries(document.id).map((entry) => ({
+      label: entry.heading ?? entry.dateRaw ?? `Entry ${entry.index + 1}`,
+      month: entry.month,
+      endMonth: entry.endMonth,
+      openEnded: entry.openEnded,
+    }))
+  );
   return {
     kind: described.kind,
     kindLabel: described.label,
@@ -68,6 +83,8 @@ function describe(store: Store, document: DocumentView): {
     // and shows a document written continuously where the truth was silence. See
     // `continuousMonths` in charts.ts.
     timeline: continuousMonths(document.stats.perMonth, document.stats.firstDate, document.stats.lastDate),
+    spans,
+    spanMonths: axisMonths(spans),
   };
 }
 

@@ -323,3 +323,160 @@ export function buildSpine(entries: SpineEntry[], citedIndexes: Iterable<number>
 
   return { mode: 'month', total: entries.length, items };
 }
+
+/* -------------------------------------------------------------- the timeline */
+
+/**
+ * One thing the document places in time: a bar, or a tick.
+ *
+ * 🔴 **THE WIDTH OF THE BAR IS THE PERIOD THE ENTRY STATES.** George, 20 September 2026, on his own
+ * resume: *"can you make the width of the bar equal to the start and end for this timeline?? … or,
+ * i mean this is for a resume, i suppose i should assume it will not always be a resume."*
+ *
+ * He was right on both counts. The chart counted entries into month buckets, so a career read as
+ * three lonely months — `July 2021`, `March 2018`, `January 2017` — and the width of a bar meant
+ * nothing at all. A resume states PERIODS; a diary states DAYS; the same chart has to draw both
+ * without being told which it is looking at, and this is that: `from` and `to` come from what the
+ * entry says, and a single date is simply a period with no length.
+ */
+export interface Span {
+  label: string;
+  /** `YYYY-MM` — what the entry states as its start. */
+  from: string;
+  /** `YYYY-MM` — what it states as its end, or the same month when it states one date. */
+  to: string;
+  /** True when the period was written as still running (`to Present`), so `to` is a convention. */
+  openEnded: boolean;
+  /** True when the entry states one date and no period — a point, drawn as a tick. */
+  point: boolean;
+  /** The row it is drawn on, so two bars that overlap in time can never sit on top of each other. */
+  lane: number;
+}
+
+export interface Spans {
+  /** In the document's own order, so a reader can follow it. */
+  spans: Span[];
+  /** The axis, `YYYY-MM`: the earliest start to the latest end. */
+  from: string;
+  to: string;
+  /** How many rows the drawing needs. */
+  lanes: number;
+  /** True when nothing in the document states a period — a diary, where every entry is a day. */
+  pointsOnly: boolean;
+  /** True when something states a period. */
+  hasPeriods: boolean;
+}
+
+/** A month as a number, so a bar's width can be its real length rather than a slot count. */
+function monthNumber(month: string): number | null {
+  const [year, part] = month.split('-').map((piece) => Number(piece));
+  if (!year || !part) return null;
+  return year * 12 + (part - 1);
+}
+
+/**
+ * The timeline: what the document places in time, and for how long.
+ *
+ * Pure, and testable without a browser, because the interesting part is not the drawing — it is the
+ * promise that a bar's length IS the period the entry states, and that two overlapping periods are
+ * never drawn through each other.
+ *
+ * **The `to` of an open-ended period is the axis end**, not today: the chart is about the document,
+ * and a bar that ran past everything else in it would be claiming something the document never
+ * said. The page says so in words.
+ */
+export function buildSpans(
+  entries: {
+    label: string;
+    month: string | null;
+    endMonth?: string | null;
+    openEnded?: boolean;
+  }[]
+): Spans {
+  const dated = entries.filter((entry) => entry.month !== null && monthNumber(entry.month) !== null);
+  const empty: Spans = { spans: [], from: '', to: '', lanes: 0, pointsOnly: true, hasPeriods: false };
+  if (dated.length === 0) return empty;
+
+  // The axis is the longest range anything states: every start, and every stated end.
+  let lowest = Infinity;
+  let highest = -Infinity;
+  for (const entry of dated) {
+    const start = monthNumber(entry.month as string) as number;
+    lowest = Math.min(lowest, start);
+    highest = Math.max(highest, start);
+    const end = entry.endMonth ? monthNumber(entry.endMonth) : null;
+    if (end !== null) highest = Math.max(highest, end);
+  }
+  // An open-ended period runs to the end of the document's own timeline — which is the `highest`
+  // already, because everything else in the document ended there.
+  const spans: Span[] = dated.map((entry) => {
+    const from = entry.month as string;
+    const stated = entry.endMonth ?? null;
+    const to = stated && (monthNumber(stated) as number) >= (monthNumber(from) as number) ? stated : from;
+    return {
+      label: entry.label,
+      from,
+      to,
+      // `?? null` matters: an entry that simply has no `endMonth` key must not read as a stated end
+      // of `undefined`. Caught by the open-ended test, which failed on exactly that.
+      openEnded: stated === null && entry.openEnded === true,
+      point: to === from,
+      lane: 0,
+    };
+  });
+
+  // 🔴 A PERIOD WRITTEN AS STILL RUNNING RUNS TO THE END OF THE AXIS — the last thing THIS DOCUMENT
+  // dates, never today. It cannot be done earlier, because the axis is not known until every start
+  // and every stated end has been looked at.
+  const axisEnd = spans.reduce((latest, span) => (span.to > latest ? span.to : latest), spans[0]?.to ?? '');
+  for (const span of spans) {
+    if (span.openEnded && axisEnd > span.to) {
+      span.to = axisEnd;
+      span.point = false;
+    }
+  }
+
+  // 🔴 ONE ROW PER OVERLAPPING PERIOD. Greedy, in the document's order: a bar goes on the first row
+  // whose last bar has already finished. Two bars drawn through each other would say the document
+  // did two things at once, which is a claim this app must never make by accident.
+  const periods = spans.filter((span) => !span.point);
+  const rows: number[] = [];
+  for (const span of periods) {
+    const start = monthNumber(span.from) as number;
+    const end = monthNumber(span.to) as number;
+    let lane = rows.findIndex((lastEnd) => lastEnd < start);
+    if (lane === -1) {
+      rows.push(end);
+      lane = rows.length - 1;
+    } else {
+      rows[lane] = end;
+    }
+    span.lane = lane;
+  }
+
+  // Points share one row of their own, under the bars: a day has no length, so two of them cannot
+  // overlap, and giving each its own row would turn nine diary entries into nine empty rows.
+  const pointLane = periods.length;
+  for (const span of spans) if (span.point) span.lane = pointLane;
+
+  const months = spans.filter((span) => !span.point);
+  return {
+    spans,
+    from: spans.reduce((earliest, span) => (span.from < earliest ? span.from : earliest), spans[0]?.from ?? ''),
+    to: spans.reduce((latest, span) => (span.to > latest ? span.to : latest), spans[0]?.to ?? ''),
+    // 🔴 THE NUMBER OF ROWS USED, NOT THE NUMBER OF PERIODS. It read `periods.length`, so two
+    // periods that do NOT overlap — a tidy career, which fits on one row — reported two rows and
+    // the drawing left an empty band under the chart. The other test caught it.
+    lanes: spans.reduce((most, span) => Math.max(most, span.lane + 1), 1),
+    pointsOnly: periods.length === 0,
+    hasPeriods: periods.length > 0,
+  };
+}
+
+/** How many months the axis covers, inclusive — the denominator of every bar's width. */
+export function axisMonths(spans: Spans): number {
+  const from = monthNumber(spans.from);
+  const to = monthNumber(spans.to);
+  if (from === null || to === null) return 0;
+  return Math.max(1, to - from + 1);
+}

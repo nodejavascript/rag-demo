@@ -265,3 +265,75 @@ export function monthLabel(month: string): string {
   if (!y || !m) return month;
   return `${MONTH_NAMES[m - 1]?.slice(0, 3) ?? m} ${String(y).slice(2)}`;
 }
+
+/** The words that join two dates into one period. A range word is required — never assumed. */
+const RANGE_WORD = /(?:\u2013|\u2014|-|\bto\b|\buntil\b|\bthrough\b|\bthru\b)/i;
+
+/** How a period that is still running gets written. */
+const STILL_RUNNING = /^(present|current|now|today|ongoing|date)$/i;
+
+/** `YYYY-MM` for a date hit, at whatever precision it was actually written. */
+function keyOf(hit: DateHit): string | null {
+  if (hit.date) return hit.date.slice(0, 7);
+  if (hit.month !== null && hit.year !== null) return `${hit.year}-${pad(hit.month)}`;
+  return null;
+}
+
+/**
+ * The period an entry states — its start AND its end, when it states both.
+ *
+ * 🔴 **A RESUME IS NOT A DIARY, AND ONE TIMELINE HAS TO SERVE BOTH.** George, 20 September 2026,
+ * looking at his own resume: *"can you make the width of the bar equal to the start and end for this
+ * timeline?? … or, i mean this is for a resume, i suppose i should assume it will not always be a
+ * resume."*
+ *
+ * Every role on that document writes a period — `July 2021 to September 2026`, `March 2018 to June
+ * 2021`, `January 2017 to February 2018` — and the parser kept only the FIRST date, so the chart of
+ * a career was three lonely months instead of three periods, and the width of the bar meant
+ * nothing. The end is read here, and **only when a range word actually joins two dates**: two
+ * dates sitting near each other in a paragraph are two facts, not a period, and joining them would
+ * invent a career. A diary entry, which writes one day, gets `null` and stays a point.
+ *
+ * `openEnded` is the honest answer for `July 2021 to Present`: the end is not written, so no end
+ * month is claimed — the page draws the bar to the end of the document's own timeline and says so.
+ */
+export interface EntryPeriod {
+  /** `YYYY-MM` for the end of the period, or null when the entry states no end. */
+  endMonth: string | null;
+  /** True when the period was written as still running — `to Present`. */
+  openEnded: boolean;
+}
+
+export function entryPeriod(text: string, yearHint: number | null = null): EntryPeriod {
+  const none: EntryPeriod = { endMonth: null, openEnded: false };
+  // `findDates` pushes hits in PATTERN order, not reading order, so they are sorted before the
+  // gap between two of them is read as a range word — otherwise `to` would be looked for in a
+  // string that runs backwards.
+  const hits = findDates(text, yearHint)
+    .slice()
+    .sort((a, b) => a.index - b.index);
+  if (hits.length === 0) return none;
+
+  for (let i = 1; i < hits.length; i += 1) {
+    const before = hits[i - 1];
+    const after = hits[i];
+    if (!before || !after) continue;
+    const between = text.slice(before.index + before.raw.length, after.index);
+    if (!RANGE_WORD.test(between)) continue;
+    const end = keyOf(after);
+    // The end must be placeable on the same axis as the start. `March to April` with no year
+    // anywhere is a period the document cannot date, and a bar drawn from a guess is worse than
+    // no bar.
+    if (end && keyOf(before)) return { endMonth: end, openEnded: false };
+  }
+
+  for (const hit of hits) {
+    const rest = text.slice(hit.index + hit.raw.length);
+    const running = rest.match(/^\s*(?:\u2013|\u2014|-|\bto\b|\buntil\b|\bthrough\b)\s*([A-Za-z]+)/i);
+    if (running?.[1] && STILL_RUNNING.test(running[1])) {
+      if (keyOf(hit)) return { endMonth: null, openEnded: true };
+    }
+  }
+
+  return none;
+}

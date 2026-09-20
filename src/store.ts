@@ -118,6 +118,8 @@ export class Store {
         ambiguous   INTEGER NOT NULL DEFAULT 0,
         month_only  INTEGER NOT NULL DEFAULT 0,
         month       TEXT,
+        end_month   TEXT,
+        open_ended  INTEGER NOT NULL DEFAULT 0,
         text        TEXT NOT NULL,
         start       INTEGER NOT NULL,
         end         INTEGER NOT NULL
@@ -146,6 +148,13 @@ export class Store {
     this.#ensureColumn('documents', 'mentions_json', "TEXT NOT NULL DEFAULT '{}'");
     this.#ensureColumn('documents', 'image_count', 'INTEGER NOT NULL DEFAULT 0');
     this.#ensureColumn('entries', 'month', 'TEXT');
+    // 🔴 ADDED WITH THE PERIOD FIELDS, AND `#ensureColumn` IS WHY IT WORKS. `CREATE TABLE IF NOT
+    // EXISTS` never adds a column to a table that already exists, so an existing index would keep
+    // the old entries table and silently drop the end of every period — a resume's bars would
+    // collapse back to points and nothing would report it. The pipeline version is bumped with
+    // this change too, so no old record is ever served from the reuse cache either.
+    this.#ensureColumn('entries', 'end_month', 'TEXT');
+    this.#ensureColumn('entries', 'open_ended', 'INTEGER NOT NULL DEFAULT 0');
   }
 
   /** Add a column only when it is genuinely absent. */
@@ -181,8 +190,8 @@ export class Store {
         );
 
       const insertEntry = this.db.prepare(
-        `INSERT INTO entries (doc_id, idx, heading, date, date_raw, inferred, ambiguous, month_only, month, text, start, end)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO entries (doc_id, idx, heading, date, date_raw, inferred, ambiguous, month_only, month, end_month, open_ended, text, start, end)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const entry of entries) {
         insertEntry.run(
@@ -195,6 +204,8 @@ export class Store {
           entry.ambiguousDate ? 1 : 0,
           entry.monthOnly ? 1 : 0,
           entry.month,
+          entry.endMonth,
+          entry.openEnded ? 1 : 0,
           entry.text,
           entry.start,
           entry.end
@@ -354,6 +365,8 @@ export class Store {
       ambiguousDate: Number(row.ambiguous) === 1,
       monthOnly: Number(row.month_only) === 1,
       month: (row.month as string | null) ?? null,
+      endMonth: (row.end_month as string | null) ?? null,
+      openEnded: Number(row.open_ended) === 1,
       text: String(row.text),
       start: Number(row.start),
       end: Number(row.end),

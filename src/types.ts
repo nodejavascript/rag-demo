@@ -32,6 +32,16 @@ export interface Entry {
    * date, or a month and a year. It is NOT a date and is never rendered as one.
    */
   month: string | null;
+  /**
+   * `YYYY-MM` for the END of a period the entry states — `July 2021 to September 2026`.
+   *
+   * 🔴 A RESUME IS NOT A DIARY. One timeline serves both: an entry that writes a period gets a bar
+   * whose width IS that period, and an entry that writes one day stays a point. Null whenever the
+   * entry states no end — and null is the honest answer, never a guess.
+   */
+  endMonth: string | null;
+  /** True when the period was written as still running — `July 2021 to Present`. */
+  openEnded: boolean;
   /** The body, with the heading removed. */
   text: string;
   start: number;

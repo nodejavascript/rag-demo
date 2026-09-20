@@ -12,6 +12,7 @@ import {
   dominantYear,
   entryDate,
   entryMonth,
+  entryPeriod,
   findDates,
   monthLabel,
 } from '../dist/dates.js';
@@ -89,4 +90,59 @@ test('two dates in one entry are both found, in order', () => {
     hits.map((hit) => hit.date),
     ['2026-03-03', '2026-04-09']
   );
+});
+
+/* ------------------------------------------------------- the period of an entry */
+
+test('a period is read from what the entry actually writes', () => {
+  // 🔴 A RESUME IS NOT A DIARY. George, 20 Sep 2026, on his own resume: *"can you make the width of
+  // the bar equal to the start and end for this timeline?? … i suppose i should assume it will not
+  // always be a resume."* The parser kept only the FIRST date, so a career timeline was three lonely
+  // months — `July 2021`, `March 2018`, `January 2017` — and the width of a bar meant nothing.
+  assert.deepEqual(entryPeriod('Senior Software Engineer | July 2021 to September 2026, Remote'), {
+    endMonth: '2026-09',
+    openEnded: false,
+  });
+  assert.deepEqual(entryPeriod('March 2018 to June 2021, Remote'), { endMonth: '2021-06', openEnded: false });
+  assert.deepEqual(entryPeriod('January 2017 – February 2018, Windsor'), { endMonth: '2018-02', openEnded: false });
+  assert.deepEqual(entryPeriod('6 March 2026 until 9 April 2026'), { endMonth: '2026-04', openEnded: false });
+  // ⚠ A BARE YEAR IS NOT PLACEABLE ANYWHERE IN THIS PARSER, AND THAT IS A LIMIT, NOT A CHOICE MADE
+  // HERE. `findDates` has no pattern for a year on its own — so `2017 to 2019` yields no period AND
+  // no month, and the entry is not on the timeline at all. Written down rather than guessed at:
+  // giving a bare year a place on the axis is a change to the date rules, not to this.
+  assert.deepEqual(entryPeriod('2017 to 2019'), { endMonth: null, openEnded: false });
+});
+
+test('and a day with no end stays a day', () => {
+  // The diary case, which is the same rule read the other way: one date is a point, not a period.
+  assert.deepEqual(entryPeriod('4 March 2026\nCold again. The boiler made the noise it makes.'), {
+    endMonth: null,
+    openEnded: false,
+  });
+  assert.deepEqual(entryPeriod('Nothing here is dated at all.'), { endMonth: null, openEnded: false });
+});
+
+test('two dates near each other are not joined into a period', () => {
+  // 🔴 THE GUARD THAT MAKES THE FEATURE HONEST. A range word has to be THERE. Two dates in one
+  // paragraph are two facts, and joining them would invent a period the document never wrote —
+  // which is the one thing a timeline must not do.
+  assert.deepEqual(entryPeriod('I saw Sam on 4 March 2026, and again on 9 April 2026.'), {
+    endMonth: null,
+    openEnded: false,
+  });
+  assert.deepEqual(entryPeriod('March 2018 was cold. June 2021 was not.'), { endMonth: null, openEnded: false });
+});
+
+test('a period written as still running says so instead of inventing an end', () => {
+  // `to Present` has no end date, and the honest answer is to say the end was never written — the
+  // page draws the bar to the end of the document's own timeline and tells the reader that is what
+  // it did.
+  assert.deepEqual(entryPeriod('Senior Engineer | July 2021 to Present'), { endMonth: null, openEnded: true });
+  assert.deepEqual(entryPeriod('Developer, February 2019 — Current'), { endMonth: null, openEnded: true });
+});
+
+test('a period with no year anywhere is left alone', () => {
+  // Half a period cannot be placed on an axis. A bar drawn from a guess is worse than no bar, so
+  // the end is refused and the entry stays whatever the start made it.
+  assert.deepEqual(entryPeriod('March to April, cold throughout.'), { endMonth: null, openEnded: false });
 });
