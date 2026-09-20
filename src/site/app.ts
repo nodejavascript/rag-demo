@@ -199,8 +199,7 @@ interface Canvas {
 
 /** Size the backing store to the device pixel ratio, so lines are not furry. */
 function fit(canvas: HTMLCanvasElement): Canvas | null {
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 320;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);  const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 320;
   const h = Number(canvas.getAttribute('height') ?? 190);
   canvas.width = Math.round(w * ratio);
   canvas.height = Math.round(h * ratio);
@@ -298,8 +297,43 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
 }
 
 /** Bars lying down: a label, a bar, and the count at the end of it. */
-/** The one font every row label is measured and drawn with. Measuring and drawing must agree. */
+/**
+ * The one font every row label is measured and drawn with. Measuring and drawing must agree. */
 const LABEL_FONT = '11.5px ui-sans-serif, system-ui, sans-serif';
+
+/**
+ * Every canvas repaints when the page's layout changes.
+ *
+ * 🔴 THIS IS NOT A NICETY — IT IS HALF THE FIX FOR "STRETCHED". A canvas is measured as it is
+ * drawn, because `fit()` reads `clientWidth` — and **a canvas inside a hidden section has no
+ * layout at all**, so the measurement fell back to 320 and the bitmap was drawn 320 wide. The page
+ * then scaled that bitmap to the full column. Measured on the live site, 20 Sep 2026: the heat map
+ * was stretched **2.56×** and the timeline **1.41×**. Revealing the section before drawing fixes
+ * the order of events; this fixes everything else — a window resize, a font arriving late, a panel
+ * opening — and nothing repainted on a resize before, so every chart kept whatever width the
+ * window happened to have when the answer arrived.
+ *
+ * A canvas that is currently hidden is skipped rather than repainted: `clientWidth` is 0 there, and
+ * repainting would only re-apply the 320 fallback to a chart nobody can see. It repaints when it
+ * comes back, because that is itself a layout change.
+ */
+const painters = new Map<HTMLCanvasElement, () => void>();
+
+/** Draw a canvas now, and again whenever the layout moves under it. */
+function painting(canvas: HTMLCanvasElement, paint: () => void): void {
+  painters.set(canvas, paint);
+  paint();
+}
+
+function repaintAll(): void {
+  for (const [canvas, paint] of painters) if (canvas.clientWidth > 0) paint();
+}
+
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => repaintAll()).observe(document.documentElement);
+} else {
+  addEventListener('resize', repaintAll);
+}
 
 /**
  * A label cut to the width it is actually allowed, and only then with an ellipsis.
@@ -459,7 +493,7 @@ function renderSpine(spine: Spine | undefined): void {
       : `This document is long, so each cell is a span of entries rather than one — ` +
         `${plural(spine.items.length, 'span')} covering ${spine.total.toLocaleString()} entries. ` +
         `The bright ones hold the ${used} entries the answer rests on.`;
-  drawSpine(el.spine, spine);
+  painting(el.spine, () => drawSpine(el.spine, spine));
 }
 
 /**
@@ -477,7 +511,11 @@ function drawHeat(canvas: HTMLCanvasElement, grid: MentionMonths): void {
   const cols = grid.months.length;
   if (rows === 0 || cols === 0) return;
 
-  const labelW = Math.min(118, Math.max(70, w * 0.3));
+  // The label column is measured here too, for the same reason as `drawRows`: this hard-
+  // truncated a name at 18 characters whatever room the canvas had.
+  ctx.font = LABEL_FONT;
+  const widest = grid.series.reduce((most, row) => Math.max(most, ctx.measureText(row.name).width), 0);
+  const labelW = Math.min(Math.max(70, widest + 8), Math.max(84, w * 0.34));
   const pad = { top: 6, bottom: 20 };
   const plotW = Math.max(20, w - labelW - 6);
   const rowH = Math.min(22, Math.max(11, (h - pad.top - pad.bottom) / rows));
@@ -487,9 +525,9 @@ function drawHeat(canvas: HTMLCanvasElement, grid: MentionMonths): void {
   grid.series.forEach((row, at) => {
     const y = pad.top + at * rowH;
     ctx.fillStyle = '#b2d3d8';
-    ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = 'middle';
-    ctx.fillText(row.name.length > 18 ? `${row.name.slice(0, 17)}\u2026` : row.name, 0, y + rowH / 2);
+    ctx.fillText(shortenToFit(ctx, row.name, labelW), 0, y + rowH / 2);
 
     row.counts.forEach((count, col) => {
       const x = labelW + col * cellW;
@@ -532,7 +570,7 @@ function renderHeat(grid: MentionMonths | undefined): void {
     'Each row is one of the things this document mentions most and each column is a month, ' +
     'so a brighter cell means more notes in that month mention it. Only the notes are counted, ' +
     'never the words, and never by the model.';
-  drawHeat(el.heat, grid);
+  painting(el.heat, () => drawHeat(el.heat, grid));
 }
 
 /**
@@ -547,7 +585,10 @@ function drawFunnel(canvas: HTMLCanvasElement, stages: { label: string; notes: n
   if (!surface) return;
   const { ctx, w, h } = surface;
 
-  const labelW = Math.min(158, Math.max(96, w * 0.34));
+  // Measured rather than guessed, and no longer cut at 24 characters regardless of the room.
+  ctx.font = LABEL_FONT;
+  const widest = stages.reduce((most, stage) => Math.max(most, ctx.measureText(stage.label).width), 0);
+  const labelW = Math.min(Math.max(96, widest + 8), Math.max(110, w * 0.42));
   const valueW = 46;
   const plotW = Math.max(20, w - labelW - valueW - 8);
   const rowH = Math.min(27, Math.max(15, (h - 8) / stages.length));
@@ -559,9 +600,9 @@ function drawFunnel(canvas: HTMLCanvasElement, stages: { label: string; notes: n
     const barW = stage.notes === 0 ? 2 : Math.max(3, (stage.notes / max) * plotW);
 
     ctx.fillStyle = '#b2d3d8';
-    ctx.font = '11.5px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = 'middle';
-    ctx.fillText(stage.label.length > 24 ? `${stage.label.slice(0, 23)}\u2026` : stage.label, 0, y + rowH / 2);
+    ctx.fillText(shortenToFit(ctx, stage.label, labelW), 0, y + rowH / 2);
 
     ctx.fillStyle = '#112d33';
     ctx.beginPath();
@@ -589,7 +630,7 @@ function renderFunnel(stages: Answer['funnel']): void {
     return;
   }
   el.funnelBox.hidden = false;
-  drawFunnel(el.funnel, stages);
+  painting(el.funnel, () => drawFunnel(el.funnel, stages));
 }
 
 /* ------------------------------------------------------------------ state */
@@ -876,7 +917,7 @@ function renderShape(document: DocumentView, timeline?: { month: string; entries
     label: point.month.slice(2),
     value: point.entries,
   }));
-  drawColumns(el.timeline, series);
+  painting(el.timeline, () => drawColumns(el.timeline, series));
   const quiet = series.filter((point) => point.value === 0).length;
   el.timelineNote.textContent =
     series.length > 0
@@ -907,7 +948,7 @@ function renderComposition(document: DocumentView): void {
   for (const mention of mentions.places.slice(0, 4)) rows.push({ label: mention.value, value: mention.count });
   for (const mention of mentions.people.slice(0, 3)) rows.push({ label: mention.value, value: mention.count });
   for (const mention of mentions.amounts.slice(0, 2)) rows.push({ label: mention.value, value: mention.count });
-  drawRows(el.composition, rows);
+  painting(el.composition, () => drawRows(el.composition, rows));
 }
 
 el.indexButton.addEventListener('click', () => void indexNow());
@@ -1099,7 +1140,7 @@ async function indexNow(): Promise<void> {
       el.indexStat.textContent = note;
       el.indexProgressNote.textContent = `${note} ${(progress.ms / 1000).toFixed(1)} s so far.`;
       // The box is already on screen, so `fit()` can measure it before anything is drawn.
-      drawProgress(el.indexChart, points, Math.max(total, 1));
+      painting(el.indexChart, () => drawProgress(el.indexChart, points, Math.max(total, 1)));
     })) as {
       document?: DocumentView;
       reused?: boolean;
@@ -1113,11 +1154,14 @@ async function indexNow(): Promise<void> {
     if (!body.document) throw new Error(body.error ?? 'The server sent no index.');
 
     current = body.document;
+    // 🔴 THE SECTION IS REVEALED BEFORE ANYTHING IS DRAWN INTO IT. A canvas in a hidden section
+    // has no layout, so `fit()` measured the 320-pixel fallback, drew a 320-wide bitmap, and the
+    // page stretched it across the full column — 2.56× on the heat map. The order was the bug.
+    // Step 2 is the READING — the panel that came back — so it appears when there is something to
+    // show, not when enough text has been typed.
+    el.step2.hidden = false;
     renderShape(body.document, body.timeline);
     useSuggestions(body.kindLabel, body.suggestions);
-    // Step 2 is the READING — the panel that came back — so it appears when there is
-    // something to show, not when enough text has been typed.
-    el.step2.hidden = false;
 
     el.indexStat.textContent = body.reused
       ? 'This exact text was already indexed, so the existing index was reused.'
@@ -1145,8 +1189,12 @@ async function indexNow(): Promise<void> {
     el.step4.hidden = false;
     renderTtl(body.document);
 
-    el.question.focus();
-    el.step3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 🔴 NO JUMP. This used to scroll the page down to step 3 the moment indexing finished —
+    // George, 20 Sep 2026: *"after it indexes it jumps to the bottom, remove that"*. The reader
+    // has just pressed a button and is looking at the chart that started moving; taking the page
+    // away from them is the page deciding what to read next. The question box is focused without
+    // scrolling, so it is ready to type in for anyone who does want to move on.
+    el.question.focus({ preventScroll: true });
   } catch (error) {
     showError(el.indexError, error instanceof Error ? error.message : 'Indexing failed.');
     el.indexStat.textContent = '';
@@ -1528,7 +1576,7 @@ function renderDetails(details: AnswerDetails, sources: Source[]): void {
 
   el.answerDetails.innerHTML = boxes.join('');
   const scores = document.getElementById('scores') as HTMLCanvasElement | null;
-  if (scores) drawScores(scores, sources);
+  if (scores) painting(scores, () => drawScores(scores, sources));
 
   // A picture the document points at may no longer be there, and the document may
   // point at a placeholder. Drop the ones that will not load, and drop the whole card

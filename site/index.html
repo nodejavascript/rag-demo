@@ -146,10 +146,20 @@
           The answer quotes the document, and beside it you get the <b>dates</b>, <b>places</b>,
           <b>people</b> and <b>images</b> it actually rests on, so you can check it instead of trusting it.
         </p>
+        <!-- 🔴 THE LEAD AND ITS SENTENCE ARE ONE FLOWING BLOCK, IN A `<span>` — George,
+             20 Sep 2026: *"the alignment is all wrong here"*, and the reason was structural.
+             `.hero li` is a flex row (so the bullet dot can sit beside the text), and a flex
+             container drops the whitespace between its items — so `<b>…</b> A question …` became
+             **two flex items**: the bold phrase in a column of its own and the sentence in
+             another, separated by the row's 10px gap. Every sentence therefore started at a
+             different x (measured: 368, 375, 411), which is what "the alignment is all wrong"
+             looks like, and a copy of the page read `…guesses.**A question…` with the space
+             gone. Wrapping the lot in one `<span>` makes it a single item that flows and wraps
+             normally, and the space comes back. -->
         <ul>
-          <li><b>It refuses rather than guesses.</b> A question the document says nothing about is refused — in milliseconds, without asking a model at all.</li>
-          <li><b>Every number is counted by the program.</b> A model cannot count, so it is never asked to. If it says a word appears 47 times, that was counted over the whole document in code.</li>
-          <li><b>Every answer shows its working.</b> The notes it came from, what each scored, and which dates and places it used.</li>
+          <li><span><b>It refuses rather than guesses.</b> A question the document says nothing about is refused — in milliseconds, without asking a model at all.</span></li>
+          <li><span><b>Every number is counted by the program.</b> A model cannot count, so it is never asked to. If it says a word appears 47 times, that was counted over the whole document in code.</span></li>
+          <li><span><b>Every answer shows its working.</b> The notes it came from, what each scored, and which dates and places it used.</span></li>
         </ul>
       </div>
 

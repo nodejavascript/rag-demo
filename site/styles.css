@@ -305,6 +305,25 @@ input:focus { border-color: var(--accent-2); }
 .chart-box p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
 .chart-box canvas { display: block; width: 100%; }
 
+/* 🔴 A DRAWING HAS A COMFORTABLE WIDTH, AND THE PANEL IS WIDER THAN THAT. George, 20 Sep 2026,
+   on four separate panels: *"Who and what appears when is stretched too much"*, *"Where the answer
+   came from is stretched so it"*, *"How it found it and so is How well each note matched"*.
+   Measured before this rule: every one of them was drawn edge to edge across ~820px, so the label
+   column was a thin strip and each bar ran the width of the panel — which is what "stretched"
+   means. The panel keeps its width; the drawing stops at a readable 720px, left-aligned under its
+   own heading, and the caption stops at 72 characters so it is not one long line either. */
+.chart-box canvas,
+.details .detail canvas { max-width: 720px; }
+.chart-box > p,
+.detail > p { max-width: 72ch; }
+
+/* ---------- the hero list ---------- */
+/* The bullet dot is a flex item, which is why that row is a flex row at all — but a flex container
+   DROPS the whitespace between its items, so the bold lead and the sentence after it became two
+   items with a 10px gutter: ragged left edges and a space missing from a copy of the page. The
+   text is one `<span>` inside the row now, so it flows and wraps as prose. */
+.hero li > span { min-width: 0; }
+
 /* The spine sits inside the answer panel, so it needs the gap the grid gives elsewhere. */
 .answer-wrap .chart-box { margin-top: 14px; }
 

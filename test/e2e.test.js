@@ -49,6 +49,39 @@ async function diary() {
   return sample.text;
 }
 
+/**
+ * No chart is drawn at one width and shown at another.
+ *
+ * 🔴 **THIS IS THE WHOLE OF "STRETCHED", AS A CHECK.** A canvas is measured at the moment it is
+ * drawn — `fit()` reads `clientWidth` — so a chart drawn while its section was still HIDDEN was
+ * laid out at the 320-pixel fallback and then scaled to the full column. Measured on the live site
+ * on 20 Sep 2026: the heat map was stretched **2.56×** and the timeline 1.41×. George saw it from
+ * the outside and said four panels were "stretched"; the numbers say why, and a screenshot review
+ * had missed it for hours. The bitmap and the space it occupies must agree.
+ *
+ * ⚠ **IT FIRES ONLY WHEN BOTH HALVES OF THE FIX ARE MISSING, WHICH IS THE STATE THE LIVE SITE WAS
+ * IN.** Revealing the section before drawing is one fix; the repaint on a layout change is the
+ * other, and the repaint alone corrects a wrong order — proven here, because injecting the order
+ * fault on its own left this assertion PASSING. That was worth learning rather than assuming: the
+ * guard would have been a check that cannot fail. Disabling both (no repaint, drawn while hidden)
+ * makes it report `timeline: bitmap 320, shown 450` — the live fault, reproduced.
+ */
+async function assertNothingStretched(where) {
+  const stretched = await page.evaluate(() => {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    return [...document.querySelectorAll('.chart-box canvas, .details .detail canvas')]
+      .filter((canvas) => canvas.getBoundingClientRect().width > 0 && canvas.width > 0)
+      .map((canvas) => ({
+        id: canvas.id || '(no id)',
+        bitmap: canvas.width,
+        shown: Math.round(canvas.getBoundingClientRect().width),
+        factor: +(canvas.width / canvas.getBoundingClientRect().width).toFixed(2),
+      }))
+      .filter((row) => Math.abs(row.factor - ratio) > 0.05);
+  });
+  assert.deepEqual(stretched, [], `${where}: drawn at one width, shown at another`);
+}
+
 async function waitForServer(timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -131,6 +164,7 @@ test('a document can be pasted and indexed, and the charts draw', async (t) => {
     return false;
   });
   assert.equal(painted, true, 'the timeline chart must actually be drawn');
+  await assertNothingStretched('right after indexing');
 });
 
 test('a question gets an answer with its details and sources', async (t) => {
@@ -159,6 +193,7 @@ test('a question gets an answer with its details and sources', async (t) => {
 
   const sources = await page.locator('#sources li').count();
   assert.ok(sources > 0, 'the notes it came from must be listed');
+  await assertNothingStretched('on the answer panel');
 });
 
 test('a question the document does not answer is refused on the page', async (t) => {
@@ -711,4 +746,54 @@ test('and the page shows the chart while it is reading, then puts it away', asyn
     /embedded in|already indexed/,
     'and it says what happened rather than what is happening'
   );
+});
+
+
+test('the lead sentence and the rest of the text flow as one block', async (t) => {
+  if (!page) return t.skip('no browser');
+  // 🔴 George, 20 Sep 2026: *"the alignment is all wrong here"*. The list is a flex row (so the
+  // bullet dot can sit beside the text), and a flex container DROPS the whitespace between its
+  // items — so `<b>It refuses rather than guesses.</b> A question …` became TWO flex items: the
+  // bold phrase in a column of its own and the sentence in another, with a 10px gutter between
+  // them. Every row's sentence therefore started at a different x, and a copy of the page read
+  // `…guesses.**A question…`. `innerText` is the rendered text, so this is the exact symptom.
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  const rendered = await page.locator('.hero ul').innerText();
+  assert.match(rendered, /guesses\. A question/, 'the space after the lead went missing again');
+
+  // And the rows line up: every sentence starts immediately after its own lead, not in a gutter.
+  const gutters = await page.evaluate(() => {
+    const out = [];
+    for (const li of document.querySelectorAll('.hero li')) {
+      const bold = li.querySelector('b');
+      const text = [...li.querySelectorAll('span')].pop();
+      // The FIRST text node in the span is the one inside `<b>`, so the walker skips anything
+      // inside the bold — what is wanted is the sentence that follows it.
+      const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.parentElement && node.parentElement.closest('b')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      });
+      const first = walker.nextNode();
+      if (!first) continue;
+      const range = document.createRange();
+      range.setStart(first, 0);
+      range.setEnd(first, Math.min(8, first.textContent.length));
+      out.push(Math.round(range.getBoundingClientRect().left - bold.getBoundingClientRect().right));
+    }
+    return out;
+  });
+  for (const gap of gutters) {
+    assert.ok(gap >= 0 && gap <= 6, `the sentence starts ${gap}px after its lead, which is a gutter not a space`);
+  }
+});
+
+test('the page never moves the reader on its own', async () => {
+  // 🔴 George, 20 Sep 2026: *"after it indexes it jumps to the bottom, remove that"*. The page
+  // used to call `scrollIntoView` on step 3 the moment indexing finished, taking the reader away
+  // from the chart that had just started moving. The only scroll left is the one back to the top
+  // when a document is deleted, which is the page returning to its own home state.
+  const bundle = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(bundle, /scrollIntoView/, 'the page scrolls itself somewhere again');
 });

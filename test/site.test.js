@@ -129,3 +129,19 @@ test('the title and og:site_name ARE the host, not a name for it', () => {
     'og:site_name must be the full host, not the demo name'
   );
 });
+
+test('and the hero list flows as prose, not as columns', () => {
+  // 🔴 THE STRUCTURAL CAUSE OF "the alignment is all wrong" (George, 20 Sep 2026). `.hero li` is a
+  // flex row so the bullet dot can sit beside the text — and a flex container drops the whitespace
+  // between its items, so a bare text node after `</b>` became a SECOND flex item: the sentence
+  // started in its own column at a different x on every row, with a 10px gutter where a space
+  // belonged. The text has to be inside a single element for it to flow, so that is what is
+  // asserted — the markup, because that is where the fault was.
+  const html = site('index.html');
+  const list = html.slice(html.indexOf('<ul>', html.indexOf('class="wrap hero"')), html.indexOf('</ul>', html.indexOf('class="wrap hero"')));
+  const items = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((match) => match[1].trim());
+  assert.ok(items.length >= 3, 'the hero list should still have its three points');
+  for (const item of items) {
+    assert.match(item, /^<span>[\s\S]*<\/span>$/, `a hero list item is not one flowing block: ${item.slice(0, 60)}…`);
+  }
+});
