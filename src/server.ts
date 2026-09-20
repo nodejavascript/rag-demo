@@ -31,6 +31,7 @@ import { Store } from './store.js';
 import { AppError, type DocumentView } from './types.js';
 import { SAMPLES } from './samples.js';
 import { describeDocument } from './kinds.js';
+import { continuousMonths } from './charts.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '4500', 10);
 const HOST = process.env.HOST ?? '127.0.0.1';
@@ -51,9 +52,23 @@ const SITE_DIR = fileURLToPath(new URL('../site/', import.meta.url));
  * it something, if it detects a resume, can you create better questions, like what are the
  * skills?"*
  */
-function describe(store: Store, document: DocumentView): { kind: string; kindLabel: string; suggestions: string[] } {
+function describe(store: Store, document: DocumentView): {
+  kind: string;
+  kindLabel: string;
+  suggestions: string[];
+  timeline: { month: string; entries: number }[];
+} {
   const described = describeDocument(store.documentText(document.id), document.stats.datedEntries);
-  return { kind: described.kind, kindLabel: described.label, suggestions: described.suggestions };
+  return {
+    kind: described.kind,
+    kindLabel: described.label,
+    suggestions: described.suggestions,
+    // Every month from the first to the last, INCLUDING the empty ones — `stats.perMonth`
+    // holds only the months with entries, and drawing those side by side closes the gaps
+    // and shows a document written continuously where the truth was silence. See
+    // `continuousMonths` in charts.ts.
+    timeline: continuousMonths(document.stats.perMonth, document.stats.firstDate, document.stats.lastDate),
+  };
 }
 
 const MIME: Record<string, string> = {

@@ -191,6 +191,8 @@ export interface ConflictReport {
   ambiguous: { label: string; raw: string }[];
 }
 
+import type { Spine } from './charts.js';
+
 export interface Answer {
   question: string;
   /** The model's reply as it came back, before it was read into shape. */
@@ -210,6 +212,12 @@ export interface Answer {
    */
   conflicts: ConflictReport;
   details: AnswerDetails;
+  /**
+   * The whole document as one row of cells, with the entries this answer was written from
+   * marked — so a reader can see whether it came from one passage or from all over. Built
+   * in code from the entries and the notes that were actually retrieved. See `charts.ts`.
+   */
+  spine: Spine;
   /** Facts counted in code over the whole document. */
   computed: ComputedFact[];
   /** How long each stage took, in milliseconds. */

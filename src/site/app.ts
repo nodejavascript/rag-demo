@@ -79,12 +79,20 @@ interface Source {
   both: boolean;
 }
 
+interface Spine {
+  mode: 'entry' | 'month';
+  items: { label: string; date: string | null; cited: boolean; entries: number }[];
+  total: number;
+}
+
 interface Answer {
   question: string;
   raw: string;
   prose: string;
   mode: 'grounded' | 'refused';
   sources: Source[];
+  /** The document as a row of cells, with the entries the answer used marked. */
+  spine?: Spine;
   /** What the document does NOT say — counted in code, never generated. See `gaps.ts`. */
   gaps: {
     absent: string[];
@@ -241,6 +249,18 @@ function drawColumns(canvas: HTMLCanvasElement, data: { label: string; value: nu
 
   data.forEach((point, at) => {
     const x = pad.left + at * slot + gap / 2;
+
+    // 🔴 A MONTH WITH NOTHING IN IT IS NOT A SHORT BAR. `perMonth` now arrives with the empty
+    // months filled in, and drawing `Math.max(2, 0)` would give silence the same 2-pixel
+    // stub as a real but tiny month — the two would be indistinguishable on the chart, which
+    // is the opposite of the reason the gap was filled in. So a zero is drawn as a single
+    // muted tick on the baseline: unmistakably "nothing here".
+    if (point.value === 0) {
+      ctx.fillStyle = '#2b4a52';
+      ctx.fillRect(x, pad.top + plotH - 1, Math.max(1, barW), 1);
+      return;
+    }
+
     const barH = Math.max(2, (point.value / max) * plotH);
     const y = pad.top + plotH - barH;
     const colour = COLOURS[at % COLOURS.length] as string;
@@ -339,6 +359,80 @@ function drawScores(canvas: HTMLCanvasElement, sources: Source[]): void {
   drawRows(canvas, data, { decimals: (value) => value.toFixed(2) });
 }
 
+/**
+ * The whole document as one row of cells, with the entries the answer used lit up.
+ *
+ * 🔴 **THIS IS THE ONE CHART THAT ANSWERS "WHERE DID THAT COME FROM?".** Everything else on
+ * this page describes the document; this describes the ANSWER — whether it was assembled
+ * from one passage or from eight places across a year. Drawn flat on purpose: one row, two
+ * states, and a caption that says the number. An axis would invite a reading it does not
+ * have.
+ */
+function drawSpine(canvas: HTMLCanvasElement, spine: Spine): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+
+  const items = spine.items;
+  if (items.length === 0) {
+    ctx.fillStyle = '#6f9aa1';
+    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('There are no entries to draw.', 2, h / 2);
+    return;
+  }
+
+  const total = items.reduce((sum, item) => sum + item.entries, 0) || items.length;
+  const pad = { left: 2, right: 2, top: 8, bottom: 20 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+  const gap = items.length > 140 ? 0 : 1.5;
+
+  let x = pad.left;
+  for (const item of items) {
+    const span = (item.entries / total) * plotW;
+    // A cited cell is full height and bright; an uncited one is a low, quiet block. The
+    // height difference is what makes the pattern readable at a glance on a wide row.
+    const barH = item.cited ? plotH : plotH * 0.42;
+    ctx.fillStyle = item.cited ? '#5eead4' : '#1d3b42';
+    ctx.beginPath();
+    ctx.roundRect(x, pad.top + (plotH - barH), Math.max(1, span - gap), barH, 2);
+    ctx.fill();
+    x += span;
+  }
+
+  // Only the ends are labelled. Labelling every cell would be unreadable and the caption
+  // already says what the cells are.
+  ctx.fillStyle = '#7ba1a8';
+  ctx.font = '10.5px ui-sans-serif, system-ui, sans-serif';
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (first) ctx.fillText((first.date ?? first.label).slice(0, 22), pad.left, h - 6);
+  if (last) {
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.fillText((last.date ?? last.label).slice(0, 22), w - pad.right, h - 6);
+    ctx.restore();
+  }
+}
+
+/** The caption the spine needs, because a chart of two colours has to say what they mean. */
+function renderSpine(spine: Spine | undefined): void {
+  if (!spine || spine.items.length === 0) {
+    el.spineBox.hidden = true;
+    return;
+  }
+  el.spineBox.hidden = false;
+  const used = spine.items.filter((item) => item.cited).reduce((sum, item) => sum + item.entries, 0);
+  el.spineNote.textContent =
+    spine.mode === 'entry'
+      ? `The answer was written from ${used} of the ${plural(spine.total, 'entry', 'entries')} in this ` +
+        'document. Each cell is one entry, in the order it was written; the bright ones are the entries it rests on.'
+      : `This document is long, so each cell is a span of entries rather than one — ` +
+        `${plural(spine.items.length, 'span')} covering ${spine.total.toLocaleString()} entries. ` +
+        `The bright ones hold the ${used} entries the answer rests on.`;
+  drawSpine(el.spine, spine);
+}
+
 /* ------------------------------------------------------------------ state */
 
 let current: DocumentView | null = null;
@@ -390,6 +484,9 @@ const el = {
   askError: $('ask-error'),
   suggestions: $('suggestions'),
   suggestHint: $('suggestions-hint'),
+  spineBox: $('spine-box'),
+  spine: $<HTMLCanvasElement>('spine'),
+  spineNote: $('spine-note'),
   answerWrap: $('answer-wrap'),
   answer: $('answer'),
   answerQ: $('answer-q'),
@@ -498,6 +595,7 @@ function resetToHome(): void {
   suggestions = [...BEFORE_INDEXING];
   if (el.suggestHint) el.suggestHint.textContent = '';
   if (el.suggestions) renderSuggestions();
+  if (el.spineBox) el.spineBox.hidden = true;
 
   // The steps that only exist while a document does.
   el.step2.hidden = true;
@@ -568,7 +666,7 @@ function card(key: string, value: string, unit: string): string {
   return `<div class="card"><div class="k">${esc(key)}</div><div class="v">${esc(value)}</div><div class="u">${esc(unit)}</div></div>`;
 }
 
-function renderShape(document: DocumentView): void {
+function renderShape(document: DocumentView, timeline?: { month: string; entries: number }[]): void {
   const stats = document.stats;
   el.shape.hidden = false;
   el.shapeTitle.innerHTML =
@@ -591,15 +689,22 @@ function renderShape(document: DocumentView): void {
     card('Span', stats.months > 0 ? plural(stats.months, 'month') : '—', stats.firstDate ?? 'no complete dates'),
   ].join('');
 
-  const perMonth = stats.perMonth.map((point) => ({ label: point.month.slice(2), value: point.entries }));
-  drawColumns(el.timeline, perMonth);
+  const series = (timeline && timeline.length > 0 ? timeline : stats.perMonth).map((point) => ({
+    label: point.month.slice(2),
+    value: point.entries,
+  }));
+  drawColumns(el.timeline, series);
+  const quiet = series.filter((point) => point.value === 0).length;
   el.timelineNote.textContent =
-    perMonth.length > 0
-      ? `Entries per month across ${plural(perMonth.length, 'month')}` +
+    series.length > 0
+      ? `Entries per month across ${plural(series.length, 'month')}` +
         (stats.firstDate ? `, from ${stats.firstDate} to ${stats.lastDate}` : '') +
+        (quiet > 0
+          ? `. ${plural(quiet, 'month')} in that span hold nothing at all, and are drawn as flat marks rather than left out.`
+          : '.') +
         (stats.monthPrecision > 0
-          ? `. ${plural(stats.monthPrecision, 'entry', 'entries')} wrote a month and a year but no day, so it sits on the month and no particular day is claimed.`
-          : '. Counted by the program, over the whole document.')
+          ? ` ${plural(stats.monthPrecision, 'entry', 'entries')} wrote a month and a year but no day, so it sits on the month and no particular day is claimed.`
+          : ' Counted by the program, over the whole document.')
       : 'Nothing in this document can be placed on a timeline — no entry writes a month and a year together.';
 
   void renderComposition(document);
@@ -643,11 +748,12 @@ async function indexNow(): Promise<void> {
       error?: string;
       kindLabel?: string;
       suggestions?: string[];
+      timeline?: { month: string; entries: number }[];
     }>(response);
     if (!response.ok || !body.document) throw new Error(body.error ?? `The server answered ${response.status}.`);
 
     current = body.document;
-    renderShape(body.document);
+    renderShape(body.document, body.timeline);
     useSuggestions(body.kindLabel, body.suggestions);
 
     el.indexStat.textContent = body.reused
@@ -918,6 +1024,9 @@ function renderAnswer(answer: Answer): void {
   el.answerQ.innerHTML = `<b>You asked:</b> ${esc(answer.question)}`;
   renderGaps(answer.gaps);
   renderConflicts(answer.conflicts);
+  // Drawn for a refusal as well as an answer: a refusal is exactly the case where seeing
+  // that NOTHING was used is worth the space.
+  renderSpine(answer.spine);
 
   if (answer.mode === 'refused') {
     el.answer.classList.add('refused');

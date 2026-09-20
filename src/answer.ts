@@ -14,6 +14,7 @@
  */
 
 import { tally } from './enrich.js';
+import { buildSpine, type Spine } from './charts.js';
 import { buildMessages, isNothingFurther, isRefusal, readShape } from './prompt.js';
 import { retrieve, type RetrieveOptions } from './retrieve.js';
 import { factsFor } from './stats.js';
@@ -66,6 +67,26 @@ function sourceOf(scored: Scored): Source {
     rerank: scored.rerank,
     both: scored.both,
   };
+}
+
+/**
+ * The document as one row of cells, with the entries the answer was written from marked.
+ *
+ * The label is the entry's own heading where it has one, otherwise the date as the document
+ * wrote it, otherwise the month it can be placed in, otherwise its position. Nothing here is
+ * invented: every cell is an entry the indexer found, and `cited` is true only for entries
+ * whose notes were actually handed to the model.
+ */
+function spineOf(entries: ReturnType<Store['entries']>, citedIndexes: number[]): Spine {
+  return buildSpine(
+    entries.map((entry) => ({
+      index: entry.index,
+      label: entry.heading?.trim() || entry.dateRaw?.trim() || entry.month || `Entry ${entry.index + 1}`,
+      date: entry.date,
+      month: entry.month,
+    })),
+    citedIndexes
+  );
 }
 
 /** The dates, places, people, amounts and pictures the answer actually rests on. */
@@ -127,6 +148,10 @@ export async function answer(
   const retrieval = await retrieve(store, model, docId, question, options.retrieve);
   const warnings = [...retrieval.warnings];
 
+  // Read once, here, because both paths need it: the refusal draws the same spine, with
+  // nothing marked on it — which is a true picture of a document that answered nothing.
+  const entries = store.entries(docId);
+
   // Computed once, over the document's whole text, and attached to BOTH a refusal and a
   // grounded answer — a refusal is where it is worth the most, because it turns "the
   // document does not say" into the reason why.
@@ -163,6 +188,7 @@ export async function answer(
         last: document.stats.lastDate,
       },
       computed: [],
+      spine: spineOf(entries, []),
       timings: {
         retrieveMs: retrieval.retrieveMs,
         rerankMs: 0,
@@ -176,7 +202,6 @@ export async function answer(
     };
   }
 
-  const entries = store.entries(docId);
   const docText = entries.map((entry) => entry.text).join('\n\n');
   const computed = factsFor(question, entries, docText);
 
@@ -221,6 +246,10 @@ export async function answer(
     conflicts,
     details: detailsFrom(retrieval.scored),
     computed: refused ? [] : computed,
+    spine: spineOf(
+      entries,
+      retrieval.scored.map((item) => item.chunk.entryIndex)
+    ),
     timings: {
       retrieveMs: retrieval.retrieveMs,
       rerankMs: retrieval.rerankMs,
