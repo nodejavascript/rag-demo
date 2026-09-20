@@ -220,9 +220,18 @@ async function serveStatic(response: ServerResponse, pathname: string): Promise<
     response.writeHead(200, {
       'content-type': type,
       'content-length': body.length,
-      // The page itself is never cached, so a deploy is visible immediately; the
-      // generated app.js is keyed by the page's own query string when it needs to be.
-      'cache-control': file === 'index.html' ? 'no-store' : 'public, max-age=300',
+      // 🔴 ONE CACHE POLICY, ONE HEADER — AND THE OLD POLICY NEVER APPLIED ANYWAY.
+      //
+      // Measured on the deployed site on 20 Sep 2026: `/app.js` came back carrying TWO
+      // `Cache-Control` headers — Caddy's `no-store` and this line's `public, max-age=300` — so the
+      // five-minute asset cache this intended was never in force, and the response instead argued
+      // with itself. Every other site in the family (`llm-demo`, `nodejavascript.com`, …) serves a
+      // single `no-store`, and so does this one now. The comment that used to sit here said the
+      // generated app.js was *"keyed by the page's own query string when it needs to be"*: it was
+      // not, and it had not been bumped once since it was written. A demo whose whole point is that
+      // a deploy is visible at once has no use for an asset cache, and a cache-buster that busts
+      // nothing is a false signal rather than a safety net.
+      'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'strict-origin-when-cross-origin',
     });
