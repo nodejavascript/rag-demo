@@ -227,11 +227,16 @@ The three that matter most:
 The container publishes on **loopback only**; the Caddy on the host is what serves it.
 
 ```bash
-npm run build
-docker build -t rag:latest .
-docker save rag:latest | gzip -1 | ssh dvs-sites 'gunzip | docker load'
-ssh dvs-sites 'cd /opt/rag && docker compose up -d'
+bash tools/deploy.sh
 ```
+
+That one command does the whole deploy: build, run the repo's suite (197 tests), build and ship the
+image, restart the container, purge the CDN, smoke-check every static path, assert **one**
+`Cache-Control` on the shell and on a bundle, and finish by running the live cookie gate in a real
+browser. It was added on 21 September 2026 for a measured reason: a finished, tested change to the
+cookie panel sat in the working tree from 11:33 to 17:35 — uncommitted, unbuilt and therefore
+undeployed — while the live site went on showing the owner's counting row. Nothing was broken and
+nobody had been told to ship it.
 
 🔴 **The deploy is not finished until a model key is at `/opt/rag/secrets/model_key`.**
 The file is mounted as `MODEL_API_KEY_FILE` and **the service starts happily without it**
