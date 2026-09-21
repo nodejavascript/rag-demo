@@ -208,26 +208,23 @@ interface Window {
   }
 
   /**
-   * The footer's counting switch, worded for what it will actually do, and shown only
-   * once it has been used.
+   * 🔴 THE OWNER'S COUNTING ROW IS GONE FROM THE PANEL (21 September 2026), applying George's
+   * rule of 19 September 2026: *"new rule i dont want count my visits in the cookie
+   * settings"*.
    *
-   * The row is the OWNER's control, not a visitor's. A visitor already has the switch
-   * in the panel, so a second way to opt out of counting sitting under the first is
-   * the same answer twice, in different words. It stays out of sight until it has
-   * actually been used — and then it is the one click back, which is the whole reason
-   * it is a row at all: turning counting off from the address bar and having to retype
-   * the address to undo it was a dead end.
+   * `wordCountSwitch()` stood here. It unhid a "This device / Stop counting my visits" row
+   * inside the preferences panel once the owner had used `?ga=off`, so he could undo it with
+   * one click, and it relabelled that link as the state changed.
+   *
+   * The intent was reasonable and the placement was not. **The panel names ONE real choice —
+   * the analytics switch — and the owner's switch belongs in the address bar**, where a
+   * visitor has no reason to look and no business to see it. A second way to opt out of
+   * counting, sitting under the visitor's own switch, is the same answer twice in different
+   * words, and it offers the owner's control to somebody who is not the owner.
+   *
+   * The owner's switch itself is untouched: `?ga=off` and `?ga=on` still work through
+   * `applyOwnerSwitch()` above, and `?ga=on` typed in the address bar is the way back.
    */
-  function wordCountSwitch(): void {
-    var off = ownerOptedOut();
-    var row = document.getElementById('consentDeviceRow');
-    if (row) row.hidden = !off;
-    var link = document.getElementById('countToggle');
-    if (!link) return;
-    link.textContent = off ? 'Count my visits' : 'Stop counting my visits';
-    link.setAttribute('href', off ? '/?ga=on' : '/?ga=off');
-  }
-
   var bar: HTMLElement | null = null;
 
   /**
@@ -442,8 +439,18 @@ interface Window {
     // reader has already answered, and something called settings that repeats the
     // question is not a settings control. The answer is left alone, so nothing stops
     // running just because somebody looked.
-    var reopen = document.getElementById('consentBtn');
-    if (reopen) reopen.addEventListener('click', openPrefs);
+    //
+    // 🔴 DELEGATED, NOT BOUND (21 September 2026) — part 2's hard requirement, and this was
+    // the last live site breaking it. Binding `#consentBtn` directly runs ONCE, at load, and
+    // works only where the footer already exists: on `password-please` the footer is a React
+    // component, so no listener was ever attached — the button rendered, looked right in
+    // every screenshot and did nothing when pressed. One listener on the DOCUMENT survives a
+    // footer that does not exist yet, and costs nothing here, where the footer is static HTML
+    // today and may not always be.
+    document.addEventListener('click', function (event) {
+      var target = event.target as Element | null;
+      if (target && target.closest && target.closest('#consentBtn')) openPrefs();
+    }, true);
 
     if (!read(KEY)) {
       // Nothing shows while the visitor decides nothing: analytics is not running, so
@@ -453,9 +460,6 @@ interface Window {
   }
 
   applyOwnerSwitch();
-  // After the switch is applied, so the words match the state the reader is about to
-  // be in rather than the one they arrived with.
-  wordCountSwitch();
   start();
 
   if (document.readyState === 'loading') {

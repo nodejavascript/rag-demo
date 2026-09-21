@@ -227,6 +227,32 @@ test('the footer links the source and the cookie settings', () => {
   assert.match(html, /id="consentBtn"[^>]*>\s*Cookie settings/, 'and offer the way back to the cookie answer');
 });
 
+test('part 2: the panel names ONE choice, and the footer door is DELEGATED', () => {
+  // 🔴 TWO HARD REQUIREMENTS OF PART 2, AND THIS SITE BROKE BOTH UNTIL 21 SEPTEMBER 2026.
+  //
+  // 1. THE OWNER'S COUNTING ROW IS NOT IN THE VISITOR'S PANEL. George, 19 Sep 2026, verbatim:
+  //    *"new rule i dont want count my visits in the cookie settings"*. A "This device / Stop
+  //    counting my visits" row sat in this panel, unhidden once the owner had used `?ga=off`.
+  //    `?ga=off` / `?ga=on` still work from the address bar, which is where the owner's switch
+  //    belongs.
+  // 2. THE FOOTER DOOR IS DELEGATED, NOT BOUND. Binding `#consentBtn` directly runs once, at
+  //    load, and works only while the footer is static HTML. It shipped broken on
+  //    `password-please` for exactly that reason — its footer is a React component, so no
+  //    listener was ever attached, and the button looked perfect and did nothing. Both forms
+  //    behave identically on this site, which is why only reading the file can hold the rule.
+  //
+  // Comments are stripped first: this file's own source explains both removals by naming the
+  // things removed, and a test that reads prose fails a change that is already correct.
+  const panel = html.replace(/<!--[\s\S]*?-->/g, '');
+  const gateCode = gate.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal(/consentDeviceRow|countToggle/.test(panel), false, "the owner's counting row must not be in the panel");
+  assert.equal(/This device/.test(panel), false, 'nor the words that name it');
+  assert.equal(/wordCountSwitch/.test(gateCode), false, 'and no code may be left to unhide one');
+  assert.match(gateCode, /document\.addEventListener\('click'/, 'the door is one listener on the document');
+  assert.match(gateCode, /closest\(['"]#consentBtn['"]\)/, 'matched as the click rises');
+  assert.doesNotMatch(gateCode, /getElementById\('consentBtn'\)/, 'never looked up by id and bound');
+});
+
 test("the footer carries this site's own privacy policy, as a section of this page", () => {
   // Part 4 of the house standard: the links line carries the site's own policy — a `#privacy`
   // section of THIS page, never a `privacy.html` of its own.
