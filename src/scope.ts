@@ -48,6 +48,13 @@ export const LIST_QUESTIONS: string[] = [
   'Where has this person worked?',
   'What education is listed?',
   'Which employers and job titles are named?',
+  // job description — every one of these is spread down the page and is not all alike, so the same
+  // starved search that answered "Which employers and job titles are named?" with four of twelve
+  // would answer these with part of the list.
+  'What are the essential qualifications?',
+  'What are the responsibilities?',
+  'What are the performance objectives?',
+  'Which technologies and tools are named?',
   // statement of accounts
   'What amounts are listed?',
   'Which payees or merchants are named?',
@@ -85,6 +92,8 @@ export const NOT_LIST_QUESTIONS: string[] = [
   'What was discussed first?',
   'What was said last?',
   'What date range does it cover?',
+  // job description — one thing said in one place, or nothing said at all
+  'What does it say about where and how the work is done?',
 ];
 
 /** The net for a question someone TYPED, where there is no registry to consult. */

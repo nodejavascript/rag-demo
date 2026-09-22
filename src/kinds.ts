@@ -24,7 +24,7 @@
  * one ever does.
  */
 
-export type DocumentKind = 'resume' | 'diary' | 'policy' | 'minutes' | 'transcript' | 'statement' | 'general';
+export type DocumentKind = 'resume' | 'job' | 'diary' | 'policy' | 'minutes' | 'transcript' | 'statement' | 'general';
 
 export interface Described {
   kind: DocumentKind;
@@ -63,6 +63,27 @@ export const BY_KIND: Record<DocumentKind, string[]> = {
     'What education is listed?',
     'Which employers and job titles are named?',
   ],
+  /**
+   * A job posting read by the person who might take the job — or by the person hiring.
+   *
+   * George, 22 Sep 2026, after pasting a Senior Software Engineer posting that the page called
+   * *"a document"*: *"this is a job description … can you add something so it does a better job"*.
+   * The five questions he was being offered were the diary's — *"Which month was busiest?"* on a
+   * posting with no dates in it — which is the exact failure `kinds.ts` exists to prevent, one kind
+   * short of covering the document people paste most after a resume.
+   *
+   * ⚠ **FOUR OF THESE ARE LIST QUESTIONS AND THAT IS DELIBERATE.** A posting's qualifications and
+   * responsibilities are spread down the page and are not all alike, so the same starved search that
+   * made *"Which employers and job titles are named?"* answer with four of twelve would answer these
+   * with three of nine. They are registered in `scope.ts` so they read the whole document.
+   */
+  job: [
+    'What are the essential qualifications?',
+    'What are the responsibilities?',
+    'What are the performance objectives?',
+    'Which technologies and tools are named?',
+    'What does it say about where and how the work is done?',
+  ],
   diary: [...GENERAL],
   policy: [
     'What does it say about termination?',
@@ -95,6 +116,7 @@ export const BY_KIND: Record<DocumentKind, string[]> = {
 
 const LABELS: Record<DocumentKind, string> = {
   resume: 'a resume',
+  job: 'a job description',
   diary: 'a diary or a journal',
   policy: 'terms or an agreement',
   minutes: 'minutes of a meeting',
@@ -109,6 +131,25 @@ const LABELS: Record<DocumentKind, string> = {
 const SECTION = /^(work\s+)?(experience|employment(\s+history)?|education|skills|technical\s+skills|summary|profile|objective|certifications?|licences?|awards|projects|publications|languages|volunteer|references)$/i;
 /** At least one of these has to be present, or two stray headings are not a resume. */
 const SECTION_ANCHOR = /experience|employment|education|skills|summary|profile|objective/i;
+
+/**
+ * The sections a JOB POSTING has, which are not the sections a resume has.
+ *
+ * 🔴 WHY THIS IS A SEPARATE PATTERN AND NOT A WORD IN THE ONE ABOVE. A resume and a job posting
+ * share almost no section names: a resume says *Experience*, *Education*, *Skills*; a posting says
+ * *Responsibilities*, *Requirements*, *What you'll do*. The two were being told apart by nothing,
+ * which is why a posting reached the page as *"a document"*.
+ */
+const JOB_SECTION = /^(about (the )?(role|you|us)|the role|role overview|position summary|job (summary|description|purpose)|responsibilities|key responsibilities|duties|what you.?ll do|what you will do|performance objectives|essential qualifications|qualifications|requirements|minimum requirements|must haves?|nice to haves?|preferred qualifications|skills (and|&) experience|experience required|environment (&|and) resources|what we offer|we offer|benefits|compensation|why join us|how to apply)$/i;
+
+/**
+ * And it talks TO a candidate rather than about an employee.
+ *
+ * A resume describes a person in the third person — *"led a team"*, *"2019 to 2022"*. A posting
+ * addresses the reader — *"you will own"*, *"the successful candidate"* — or names the machinery of
+ * hiring — *"we are hiring"*, *"apply now"*, *"salary range"*.
+ */
+const JOB_MARKER = /\b(job description|job posting|we are (looking|seeking|hiring)|we're (looking|seeking|hiring)|the successful candidate|you will (own|lead|build|design|work|be|join)|you.?ll (own|lead|build|design|work|be|join)|the role (is|will)|this role|applicants?|apply (now|by|with|today|below)|salary range|annual salary|per annum|hourly rate|base salary|benefits package|paid time off|vacation entitlement|probationary period|notice period|permanent (position|role|full)|full[- ]time|part[- ]time|hybrid|on[- ]site|work from home|remote work|equity)\b/gi;
 
 const SPEAKER = /^[A-Z][A-Za-z'’-]*(?:\s+[A-Z][A-Za-z'’-]*){0,3}:\s+\S/;
 
@@ -143,6 +184,19 @@ function lines(text: string): string[] {
 export function detectKind(text: string, datedEntries: number): DocumentKind {
   const sections = lines(text).filter((line) => line.length > 0 && line.length <= 40 && SECTION.test(line));
   if (sections.length >= 2 && SECTION_ANCHOR.test(sections.join(' '))) return 'resume';
+
+  // 🔴 A JOB POSTING IS CHECKED SECOND, STRAIGHT AFTER A RESUME, AND THE ORDER IS THE ARGUMENT: the
+  // two documents people paste most are a resume they are writing and a posting they are answering,
+  // and a resume must keep winning, because it carries the stronger evidence (employers, dates,
+  // degrees) and a posting has none of those.
+  //
+  // The thresholds are set so an EMPLOYMENT AGREEMENT is not mistaken for a posting. A contract has
+  // *"probationary period"*, *"notice period"* and *"salary"* — three of the markers below — but it
+  // has no posting sections, so two sections are required, or one section with three markers, or six
+  // markers on their own. A contract reaches none of those and still falls through to `policy`.
+  const jobSections = lines(text).filter((line) => line.length > 0 && line.length <= 48 && JOB_SECTION.test(line));
+  const jobMarks = distinct(text, JOB_MARKER);
+  if (jobSections.length >= 2 || (jobSections.length >= 1 && jobMarks >= 3) || jobMarks >= 6) return 'job';
 
   const speakerLines = lines(text).filter((line) => SPEAKER.test(line));
   const speakers = new Set(speakerLines.map((line) => line.split(':')[0]?.trim().toLowerCase() ?? ''));

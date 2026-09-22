@@ -101,3 +101,110 @@ test('NO suggested question ever asks for arithmetic', () => {
     }
   }
 });
+/* ------------------------------------------------------ a job posting */
+
+/**
+ * 🔴 A JOB POSTING IS ITS OWN KIND, AND IT WAS NOT ONE UNTIL 22 SEP 2026.
+ *
+ * George pasted this posting and the page called it *"a document"*, so it offered the diary's
+ * questions — including *"Which month was busiest?"*, on a posting with no dates in it. The posting
+ * below is his text, trimmed to the parts that carry the signals; it is the case that found the gap,
+ * so it is the case that guards it.
+ */
+const POSTING = `Senior Software Engineer
+Ottawa, Ontario
+As a Senior Software Engineer you will own the design, delivery, and evolution of production systems
+that integrate AI, automate workflows, and modernize infrastructure so our clients can compete and
+grow. Your code and architecture decisions will ship, run in production, and measurably improve how
+those organizations operate.
+PERFORMANCE OBJECTIVES
+Deliver at least two production AI-integrated or automation systems per year that reduce client cycle
+times or error rates by 25% or more, measured against pre-project baselines.
+Lead the end-to-end modernization of one legacy platform annually, including architecture,
+migration, security hardening, and handover so the new system meets 99.9% availability.
+Build and maintain cloud-native services and CI/CD pipelines that cut deployment lead time by 40%
+while keeping production incidents below an agreed threshold.
+ENVIRONMENT & RESOURCES
+You will report to the engineering lead inside a compact 11-50 person company based in Ottawa. You
+will work with a small, high-ownership team that already uses modern cloud platforms, DevOps tooling,
+and AI-assisted development. You will have direct access to clients, architecture decisions, and the
+latitude to choose proven technologies that solve the problem.
+ESSENTIAL QUALIFICATIONS
+Demonstrated track record shipping production software that includes AI integration, system
+modernization, or large-scale automation.
+Hands-on experience designing and operating cloud architectures and DevOps pipelines that meet
+availability and security requirements.
+Ability to take ambiguous client problems, produce a technical plan, and deliver working software on
+a predictable cadence.`;
+
+/** And a second posting, written in the other common shape, so the detection is not tuned to one. */
+const POSTING_TWO = `About the role
+We are hiring a Data Platform Engineer to join our team in Burlington. This is a full-time role and
+it can be hybrid or fully remote for the right candidate.
+What you'll do
+Design and run the pipelines that move our clients' data every night.
+Own the on-call rotation for the platform, and the runbooks that go with it.
+Requirements
+Five years building production data systems.
+Strong SQL, and one of Python or Go.
+Nice to have
+Experience with Terraform.
+What we offer
+A salary range of 140,000 to 175,000, a benefits package, and four weeks of paid time off.
+How to apply
+Send your resume to the address at the bottom of this posting.`;
+
+/** An employment agreement is the trap: it carries three of the same words a posting does. */
+const EMPLOYMENT_CONTRACT = `EMPLOYMENT AGREEMENT
+This agreement is made between the Employer and the Employee. The Employee shall commence
+employment on a probationary period of three months. Either party may terminate this agreement by
+giving notice in writing. The Employee shall be paid a salary, and the notice period shall be four
+weeks. This agreement shall be governed by the laws of Ontario, and no clause of it may be varied
+except in writing signed by both parties.`;
+
+test('a job posting is recognised as a job posting, and is asked about its requirements', () => {
+  const described = describeDocument(POSTING, 0);
+  assert.equal(described.kind, 'job', 'a posting must not be read as a general document');
+  assert.equal(described.label, 'a job description');
+  assert.equal(described.suggestions[0], 'What are the essential qualifications?');
+  assert.ok(
+    described.suggestions.some((question) => /technologies/i.test(question)),
+    'a posting is where the stack is named, so it must be asked about'
+  );
+  // And it must NOT be offered the diary's questions, which is the fault that produced this kind.
+  assert.ok(
+    !described.suggestions.includes('Which month was busiest?'),
+    'the diary questions must not be offered on a posting'
+  );
+});
+
+test('a second posting, written in another shape, is recognised too', () => {
+  // The detection must not be tuned to one posting's headings: this one uses About the role / What
+  // you'll do / Requirements / Nice to have / What we offer, and says nothing the first one says.
+  const described = describeDocument(POSTING_TWO, 0);
+  assert.equal(described.kind, 'job');
+  assert.equal(described.label, 'a job description');
+});
+
+test('an employment agreement is NOT mistaken for a job posting', () => {
+  // 🔴 THIS IS THE TRAP THE KIND HAD TO BE BUILT AROUND. A contract contains "probationary period",
+  // "notice period" and "salary" — three of the posting markers — so a naive marker count reads a
+  // contract as a posting. A posting is required to carry its own SECTIONS as well, and a contract
+  // has none, so it still falls through to `policy` where its questions are the right ones.
+  assert.equal(detectKind(EMPLOYMENT_CONTRACT, 0), 'policy');
+});
+
+test('a resume that mentions full-time and remote is still a resume', () => {
+  // A resume may carry posting words in its own text; the resume check runs first and must keep
+  // winning, because a resume has employers, dates and degrees that a posting never has.
+  const resume = `Jane Doe — Senior Software Engineer
+EXPERIENCE
+Acme Corporation, Hamilton, Ontario — Senior Engineer, permanent full-time role, remote two days a week
+2019 to 2024
+Led the migration of the billing platform to Kubernetes.
+EDUCATION
+McMaster University, Bachelor of Engineering, 2015
+SKILLS
+TypeScript, Node.js, PostgreSQL, Docker, AWS`;
+  assert.equal(detectKind(resume, 0), 'resume');
+});
