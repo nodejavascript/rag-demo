@@ -193,23 +193,45 @@ test('and the two mention charts are ranked highest-first, with gradient bars', 
   assert.match(charts, /\.sort\(\(a, b\) => b\.count - a\.count\)/, 'the heat rows are not ranked by count');
 });
 
-test('the suggested questions come before the sentence about how questions are matched', () => {
-  // George, 22 Sep 2026: the line reading *"This looks like a transcript — try one of these:"* and
-  // the questions under it *"can go above Ask in your own words. It looks for what the document
-  // says…"*. An example question this document can actually answer is more use at the top of the
-  // step than a sentence about how matching works; the sentence then explains why those examples
-  // work. Asserted on the order in the shipped markup, because that order IS the change.
-  const stepThree = step(site('index.html'), 'step-2');
-  const suggestions = stepThree.indexOf('id="suggestions"');
+test('the question buttons sit under the box the reader asks in, with room above and below them', () => {
+  // George, 22 Sep 2026, moving the same two nodes a second time: *"This looks like a resume — try
+  // one of these: i want more vertical space above and below this. this tells users how smart the
+  // rag is. also the button questions go under the user ask."* So the box comes first and the
+  // ready-made questions follow it, and that block — the line naming what the document was taken
+  // for plus the questions under it — is given air, because it is the page demonstrating that it
+  // understood the document.
+  const askPanel = step(site('index.html'), 'step-2');
+  const at = {
+    hint: askPanel.indexOf('<p class="hint">'),
+    input: askPanel.indexOf('id="question"'),
+    askButton: askPanel.indexOf('id="ask"'),
+    errorLine: askPanel.indexOf('id="ask-error"'),
+    theLine: askPanel.indexOf('id="suggestions-hint-row"'),
+    theQuestions: askPanel.indexOf('id="suggestions"'),
+  };
   // 🔴 THE HINT IS FOUND BY ITS ELEMENT, NOT BY ITS WORDS. Searching for the phrase
   // "Ask in your own words" found it in the COMMENT ABOVE — which quotes George asking for this
   // very change — so the guard failed on the fix it was written to protect. A guard that searches
   // prose will always find its own comment, and the comment is usually nearer the top.
-  const hint = stepThree.indexOf('<p class="hint">');
-  const input = stepThree.indexOf('id="question"');
-  assert.ok(suggestions !== -1 && hint !== -1 && input !== -1, 'step 3 must hold the suggestions, the hint and the box');
-  assert.ok(suggestions < hint, 'the suggestions went back below the hint');
-  assert.ok(suggestions < input, 'and they must come before the box they are suggestions for');
+  assert.ok(
+    Object.values(at).every((index) => index !== -1),
+    `the ask panel lost part of itself: ${JSON.stringify(at)}`
+  );
+  assert.ok(at.hint < at.input, 'the sentence about how questions are matched must explain the box below it');
+  assert.ok(at.input < at.askButton, 'the Ask button must follow the box it submits');
+  assert.ok(at.askButton < at.theLine, 'the questions went back above the box the reader asks in');
+  assert.ok(at.errorLine < at.theLine, 'the error line belongs to the box, so it stays above the questions');
+  assert.ok(at.theLine < at.theQuestions, 'the line naming the document must introduce the questions under it');
+
+  // The room is the other half of the ask, and an order without it is only half done.
+  const css = site('styles.css');
+  const above = /#suggestions-hint-row\s*\{[^}]*margin-top:\s*(\d+)px/.exec(css);
+  const below = /#suggestions\s*\{[^}]*margin-bottom:\s*(\d+)px/.exec(css);
+  assert.ok(above, 'nothing states the space above the line that names the document');
+  assert.ok(below, 'nothing states the space below the questions');
+  assert.ok(Number(above[1]) >= 24, `the line naming the document has only ${above[1]}px above it`);
+  assert.ok(Number(below[1]) >= 20, `the questions have only ${below[1]}px below them`);
+  assert.match(css, /\.suggest-hint \{ margin: 0;/, 'the line kept its own top margin, which double-counts the room above');
 });
 
 test('and the reading panel carries the chart of how it was indexed', () => {

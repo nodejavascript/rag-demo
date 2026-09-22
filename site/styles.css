@@ -209,7 +209,10 @@ main { padding-block: 32px 60px; }
    that button at x=88, and it carried NO top margin — 43px of indent nobody chose and 0px of air.
    Stated once here rather than per element, because the same fault appeared a second time that
    evening when the suggested questions moved above step 3's hint and the hint became the middle
-   of a control stack. Guarded in test/site.test.js. */
+   of a control stack. 🔴 **Later on 22 Sep 2026 the step-2 hint left this case: the question
+   buttons moved UNDER the box ("the button questions go under the user ask"), so that hint is now
+   directly beneath its heading and gets the 43px subtitle indent deliberately.** This rule is what
+   remains for step 1's "Index it" hint. Guarded in test/site.test.js. */
 .row + p.hint { margin: 16px 0; }
 @media (max-width: 620px) { .step > p.hint { margin-left: 0; } .step { padding: 18px; } }
 
@@ -243,10 +246,18 @@ textarea#paste::placeholder { color: #4d7a7f; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .row.tight { margin-top: 8px; gap: 8px; }
 
-/* The line that names what the document was taken for, above its questions. Empty until
-   something is indexed, and it takes no room while it is. */
-.suggest-hint { margin: 10px 0 0; font-size: 13.5px; color: var(--muted, #8b93a7); }
+/* 🔴 WHAT THE DOCUMENT WAS TAKEN FOR, AND THE QUESTIONS IT CAN ANSWER — UNDER THE BOX, WITH ROOM.
+   George, 22 Sep 2026: *"i want more vertical space above and below this. this tells users how smart
+   the rag is. also the button questions go under the user ask"*. Measured before the change: 10px
+   above the line and NOTHING below the last chip, so the one part of the page that shows the
+document was understood read as a caption squeezed against the controls. An ID selector beats
+   `.row.tight`'s 8px, which is the only reason the space is stated here and not on the class.
+   Empty until something is indexed, and it takes no room while it is — and `#step-2` is only ever
+   revealed by the index response that fills this line, so the room is never paid for nothing. */
+.suggest-hint { margin: 0; font-size: 13.5px; color: var(--muted, #8b93a7); }
 .suggest-hint:empty { display: none; }
+#suggestions-hint-row { margin-top: 30px; }
+#suggestions { margin-bottom: 26px; }
 .grow { flex: 1 1 auto; }
 
 button, .btn {
