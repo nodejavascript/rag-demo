@@ -1188,3 +1188,131 @@ test('the page shows how the answer is being built, while it is being built', as
   );
   await assertNothingStretched('with the progress chart up');
 });
+
+/**
+ * 🔴 CLICKING THE SUGGESTED QUESTIONS QUICKLY MUST CANCEL THE ANSWER IT WALKED AWAY FROM.
+ *
+ * George's report, 22 September 2026, verbatim: *"this is allowing me to rapidly click the question
+ * button this will overload. when i clicka dn its gathgering the answer, clicking should abort and
+ * evaluate the new question"*. The suggested questions stay clickable on purpose, so before this
+ * every impatient click started ANOTHER full answer — another model call, socket and buffer, each
+ * held for as long as the model took.
+ *
+ * This test is the gesture itself: three clicks inside half a second. It asserts the two things that
+ * were wrong, and both are asserted from the BROWSER's own account of the network rather than from
+ * the page's own opinion:
+ *
+ *   1. the earlier asks were ABANDONED — Playwright reports them as failed requests with
+ *      `net::ERR_ABORTED`, which is what an aborted `fetch` looks like from outside;
+ *   2. the LAST question still gets answered — and the answer names the question that was clicked
+ *      last, so a stale answer cannot be sitting where the new one should be.
+ */
+test('clicking the suggested questions quickly cancels the answers it walked away from', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+
+  // 🔴 THE PROPERTY IS MEASURED AT THE SEAM, NOT FROM PLAYWRIGHT'S EVENT ORDER. Counting how many
+  // asks are open at once from the network events races: the abort of one ask and the start of the
+  // next are dispatched by the browser almost together, and on the first two runs of this test the
+  // same correct page was reported as "1 in flight" and "2 in flight" — a measurement that disagrees
+  // with the thing it measures. So the page's own `fetch` is wrapped BEFORE the app runs, and each
+  // ask records two facts that do not race, because the abort happens SYNCHRONOUSLY before the next
+  // request is created:
+  //
+  //   · `previousAborted` — was the ask before this one already cancelled when this one started?
+  //   · `aborted` — did this ask's own signal fire?
+  //
+  // ⚠️ THIS MUST COME BEFORE THE FIRST `goto`, or it applies only to the NEXT navigation and the
+  // page under test never gets the wrapper.
+  await page.addInitScript(() => {
+    window.__asks = [];
+    window.__lastAsk = null;
+    const real = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : String((input && input.url) || '');
+      if (url.includes('/api/ask')) {
+        const signal = init && init.signal;
+        const previous = window.__lastAsk;
+        const entry = {
+          previousAborted: previous ? Boolean(previous.signal && previous.signal.aborted) : null,
+          hasSignal: Boolean(signal),
+          aborted: false,
+        };
+        window.__asks.push(entry);
+        if (signal) signal.addEventListener('abort', () => { entry.aborted = true; });
+        window.__lastAsk = { signal };
+      }
+      return real.apply(this, arguments);
+    };
+  });
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+
+  const asked = [];
+  const abandoned = [];
+  const isAsk = (request) => request.url().includes('/api/ask');
+  page.on('request', (request) => {
+    if (isAsk(request)) asked.push(request.url());
+  });
+  page.on('requestfailed', (request) => {
+    if (isAsk(request)) abandoned.push(request.failure()?.errorText ?? 'failed');
+  });
+
+  const buttons = page.locator('#suggestions button');
+  const count = await buttons.count();
+  assert.ok(count >= 3, `the page must offer questions to click — it offered ${count}`);
+
+  const third = (await buttons.nth(2).innerText()).trim();
+  await buttons.nth(0).click();
+  await page.waitForTimeout(150);
+  await buttons.nth(1).click();
+  await page.waitForTimeout(150);
+  await buttons.nth(2).click();
+
+  await page.waitForFunction(
+    () => !document.getElementById('answer-wrap').hidden && document.getElementById('answer-prose').innerText.length > 0,
+    null,
+    { timeout: 180000 }
+  );
+
+  assert.equal(asked.length, 3, `the page asked three times, once per click — it asked ${asked.length}`);
+
+  const seam = await page.evaluate(() => window.__asks);
+  assert.equal(seam.length, 3, `three asks must have been created — saw ${JSON.stringify(seam)}`);
+  assert.ok(
+    seam.every((ask) => ask.hasSignal),
+    `every ask must carry a signal, or nothing can cancel it — saw ${JSON.stringify(seam)}`
+  );
+  assert.equal(seam[0].previousAborted, null, 'the first ask has nothing before it to cancel');
+  assert.ok(
+    seam.slice(1).every((ask) => ask.previousAborted === true),
+    'the ask before each new one must already be cancelled when the new one starts — ' + JSON.stringify(seam)
+  );
+  assert.ok(
+    seam.filter((ask) => ask.aborted).length >= 2,
+    `the asks the reader walked away from must be aborted — ${JSON.stringify(seam)}`
+  );
+  // And the network agrees: they were abandoned, not finished.
+  assert.ok(
+    abandoned.length >= 2,
+    `the asks the reader walked away from must be cancelled, not left running — ${abandoned.length} ` +
+      `were cancelled: ${JSON.stringify(abandoned)}`
+  );
+  assert.ok(
+    abandoned.every((text) => /ABORTED/i.test(text)),
+    `an abandoned ask must look like a cancellation, not a network fault — saw ${JSON.stringify(abandoned)}`
+  );
+
+  // The answer on the page belongs to the question clicked LAST: nothing stale painted over it.
+  const askedOnPage = (await page.locator('#answer-q').innerText()).replace(/^You asked:\s*/i, '').trim();
+  assert.ok(
+    askedOnPage.includes(third.slice(0, 24)),
+    `the answer shown must be for the last question clicked — page asked "${askedOnPage}", last click was "${third}"`
+  );
+
+  // And the button is usable again, because the newest ask, and only the newest, owns it.
+  const button = await page.locator('#ask').innerText();
+  assert.match(button, /ask/i, 'the ask button must be back to itself once the last answer lands');
+});

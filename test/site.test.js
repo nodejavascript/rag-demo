@@ -57,6 +57,16 @@ test('and the layer sits behind the page rather than on top of it', () => {
   assert.match(pattern, /z-index:\s*-1/);
 });
 
+/**
+ * The stylesheet and the script WITHOUT their comments.
+ *
+ * 🔴 THIS EXISTS BECAUSE A GUARD HAS ALREADY FAILED ON ITS OWN COMMENT, TWICE IN THIS FAMILY OF SITES.
+ * The rule below preserves the dead `max-width: 720px` declaration as a quotation — for the reason it
+ * existed — and the first version of the guard matched that quotation instead of the live rule, so a
+ * correct stylesheet failed. Stripping comments makes the guard read the CSS the browser reads.
+ */
+const withoutComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
+
 /* ------------------------------------------------------------------ the steps */
 
 /**
@@ -348,4 +358,55 @@ test('and the hero list flows as prose, not as columns', () => {
   for (const item of items) {
     assert.match(item, /^<span>[\s\S]*<\/span>$/, `a hero list item is not one flowing block: ${item.slice(0, 60)}…`);
   }
+});
+
+/* --------------------------------------------------- every chart fills its box */
+
+test('no chart is capped narrower than the box it sits in', () => {
+  // 🔴 GEORGE, 22 Sep 2026, verbatim: *"this chart should extend to max width … make sure other charts
+  // are using max width where applicable"*. The cap this guards against was his OWN earlier request
+  // (20 Sep 2026: *"Who and what appears when is stretched too much"*), and it read
+  // `.chart-box canvas, .details .detail canvas { max-width: 720px; }`. Measured at a 1440-pixel
+  // window the day it was lifted: every other chart drew at 820px while `What it is about` — the one
+  // he pointed at — drew at **326px**, because it shared a two-column grid.
+  const css = withoutComments(site('styles.css'));
+  const rule = css.match(/\.chart-box canvas,\s*\.details \.detail canvas \{[^}]*\}/);
+  assert.ok(rule, 'the rule that sizes every chart canvas is gone');
+  assert.match(rule[0], /max-width:\s*none/, 'a chart cap came back');
+  assert.ok(!/max-width:\s*720px/.test(rule[0]), 'the 720px cap is back');
+});
+
+test('and no chart shares a row with another', () => {
+  // Two charts side by side is what squeezed the value chart to 326px, and a bar chart spends up to
+  // 46% of its width on the label column, so what was left could not say anything.
+  // 🔴 EVERY `.charts` RULE IS CHECKED, AND THAT IS THE FIX TO THIS GUARD RATHER THAN A TIDY-UP.
+  // The first version matched the first `.charts` rule it found — which is the one inside
+  // `@media (max-width: 620px)` — and reported a two-column grid as fine, because the mobile rule
+  // also says `1fr`. A guard that reads a rule that does not govern is worse than no guard: it went
+  // green against the very regression it exists to catch.
+  const css = withoutComments(site('styles.css'));
+  const rules = css.match(/\.charts \{[^}]*\}/g) ?? [];
+  assert.ok(rules.length > 0, 'the .charts grid rules are gone');
+  for (const rule of rules) {
+    assert.match(rule, /grid-template-columns:\s*1fr(;|\s*\})/, `a chart is sharing a row: ${rule}`);
+  }
+});
+
+test('the chart of what it is about is ordered by the value, biggest first', () => {
+  // ⚠️ THIS IS A SOURCE GUARD, NOT A PROOF, AND IT SHOULD NOT BE PRESENTED AS ONE. It catches the
+  // sort being deleted or reversed; it cannot show the drawing obeys it. An e2e test that measured
+  // the painted bars was written and then REMOVED, because the counts a document yields come from
+  // the mention extractor rather than from how a test writes the prose — two attempts produced rows
+  // of nearly equal length, so the test passed whether the sort was right or reversed. The ordering
+  // was confirmed by hand instead, on a document with clearly uneven counts.
+  const app = withoutComments(site('app.js'));
+  assert.match(
+    app,
+    /\.sort\(\(a, b\) => b\.value - a\.value\)/,
+    'the composition rows are no longer sorted biggest first'
+  );
+  // And the rows are gathered from all three kinds, not from one — the whole point of the chart.
+  assert.match(app, /mentions\.places/);
+  assert.match(app, /mentions\.people/);
+  assert.match(app, /mentions\.amounts/);
 });

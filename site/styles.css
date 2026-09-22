@@ -346,8 +346,19 @@ input:focus { border-color: var(--accent-2); }
 }
 .card .u { font-size: 12px; color: var(--muted); margin-top: 5px; }
 
-.charts { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
-@media (max-width: 880px) { .charts { grid-template-columns: 1fr; } }
+/* 🔴 ONE CHART PER ROW, EACH AT THE FULL WIDTH OF THE PANEL — 22 Sep 2026.
+   George, 22 Sep 2026, verbatim: *"this chart should extend to max width … make sure other charts are
+   using max width where applicable"*. PRIOR RULE, PRESERVED AND NOW DEAD:
+   `.charts { grid-template-columns: 1.35fr 1fr; }` — two of these charts sat side by side so that
+   the reading panel was not one long column. Measured at a 1440-pixel window before this change:
+   every other chart on the page drew at 820px, `The shape of it over time` drew at 450px and
+   `What it is about` — the one he pointed at — at **326px**. A value chart spends up to 46% of its
+   width on the label column (`drawRows`), so 326px left the bars about 150px to say anything in,
+   which is what "should extend to max width" means when you look at it. Every chart is now full
+   width, and the panel is a column of charts instead of a two-by-two block: taller, and each
+   chart legible. The one that carries the values is still ordered highest first, so the longest
+   and warmest bar is the thing the document is most about. */
+.charts { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .chart-box {
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -358,15 +369,25 @@ input:focus { border-color: var(--accent-2); }
 .chart-box p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
 .chart-box canvas { display: block; width: 100%; }
 
-/* 🔴 A DRAWING HAS A COMFORTABLE WIDTH, AND THE PANEL IS WIDER THAN THAT. George, 20 Sep 2026,
-   on four separate panels: *"Who and what appears when is stretched too much"*, *"Where the answer
-   came from is stretched so it"*, *"How it found it and so is How well each note matched"*.
-   Measured before this rule: every one of them was drawn edge to edge across ~820px, so the label
-   column was a thin strip and each bar ran the width of the panel — which is what "stretched"
-   means. The panel keeps its width; the drawing stops at a readable 720px, left-aligned under its
-   own heading, and the caption stops at 72 characters so it is not one long line either. */
+/* 🔴 EVERY CHART FILLS ITS BOX — superseding the 720px cap of 20 September 2026.
+   George, 22 Sep 2026, verbatim: *"this chart should extend to max width, maybe set up order by the
+   value highest first. make sure other charts are using max width where applicable"*.
+   PRIOR RULE, PRESERVED AND NOW DEAD — the reason it existed is worth keeping, because it was his
+   own request: *"A DRAWING HAS A COMFORTABLE WIDTH, AND THE PANEL IS WIDER THAN THAT."* On 20 Sep
+   2026 he said four panels were *"stretched too much"* — *"Who and what appears when is stretched
+   too much"*, *"Where the answer came from is stretched so it"*, *"How it found it and so is How
+   well each note matched"* — and they were drawn edge to edge across ~820px, so the label column
+   was a thin strip and every bar ran the width of the panel. The cap fixed that; it was
+   `.chart-box canvas, .details .detail canvas { max-width: 720px; }`.
+   🔴 WHY IT IS LIFTED, AND WHAT REPLACES IT. The panel is wider than 720px on any ordinary screen,
+   so a cap leaves a third of the panel empty beside a chart that needs the room — the label column
+   in `drawRows` takes up to 46% of the width, and the plot is what is left. So the drawing now fills
+   its own box at every viewport. What the cap was actually protecting is kept by other means:
+   the caption keeps its own measure so it is not one long line, the drawing starts at the left edge
+   of its own box under its own heading, and the row height in `drawRows` is still capped at 24px, so
+   a two-row chart does not become two fat bars — the bars grow in LENGTH and not in height. */
 .chart-box canvas,
-.details .detail canvas { max-width: 720px; }
+.details .detail canvas { max-width: none; }
 .chart-box > p,
 .detail > p { max-width: 72ch; }
 

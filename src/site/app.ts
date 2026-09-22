@@ -1918,11 +1918,40 @@ function markAnswered(durationMs: number): void {
   });
 }
 
+/**
+ * The ask that is in flight, and a counter that marks which ask is the newest.
+ *
+ * 🔴 WHY A COUNTER AND NOT JUST THE ABORT. Aborting stops the request, but it cannot un-send the
+ * lines already on the wire, and an aborted `fetch` still settles its `await` afterwards. So every
+ * step that touches the page — the progress chart, the answer, the button, the conversion — asks
+ * `isCurrent()` first and does nothing if a newer question has been asked since.
+ */
+let asking: AbortController | null = null;
+let askGeneration = 0;
+
 async function askNow(): Promise<void> {
   if (!current || !el.question.value.trim()) {
     el.question.focus();
     return;
   }
+
+  // 🔴 A CLICK WHILE AN ANSWER IS BEING GATHERED CANCELS THAT ANSWER AND ASKS THE NEW QUESTION.
+  // George, 22 September 2026, verbatim: *"this is allowing me to rapidly click the question button
+  // this will overload. when i clicka dn its gathgering the answer, clicking should abort and
+  // evaluate the new question"*. The suggested questions stay clickable on purpose — a reader who
+  // changes their mind should not have to wait out an answer they no longer want — so before this,
+  // every impatient click started ANOTHER full answer: another model call, another socket and
+  // another response buffer, each held for as long as the model took, on a host with 314 MB free.
+  // The previous request is now ABORTED, which frees its socket immediately, and the page never has
+  // more than one ask in flight — so the server's own `MAX_CONCURRENT_ASK` sees one ask from this
+  // visitor rather than five.
+  asking?.abort();
+  const controller = new AbortController();
+  asking = controller;
+  const generation = ++askGeneration;
+  /** False once a newer question has been asked, so nothing from this one paints over it. */
+  const isCurrent = (): boolean => generation === askGeneration;
+
   clear(el.askError);
   el.askButton.disabled = true;
   el.askButton.innerHTML = '<span class="spinner"></span>Reading';
@@ -1945,10 +1974,15 @@ async function askNow(): Promise<void> {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ docId: current.id, question: el.question.value.trim() }),
+      // The signal is what makes the next click cancel this one rather than race it.
+      signal: controller.signal,
     });
     if (!response.ok) throw new Error(`The server answered ${response.status} before it started.`);
 
     const body = (await readJsonLines(response, (event) => {
+      // A cancelled ask may still have lines in flight; they belong to the question the reader has
+      // already walked away from, so they are dropped rather than drawn onto the new chart.
+      if (!isCurrent()) return;
       if (event.type !== 'progress') return;
       stages.push(event as unknown as AskStage);
       const running = stages[stages.length - 1] as AskStage;
@@ -1967,6 +2001,7 @@ async function askNow(): Promise<void> {
 
     if (ticker !== 0) window.clearInterval(ticker);
     ticker = 0;
+    if (!isCurrent()) return;
     renderAnswer(body);
     markAnswered(performance.now() - startedAt);
 
@@ -1983,10 +2018,22 @@ async function askNow(): Promise<void> {
   } catch (error) {
     if (ticker !== 0) window.clearInterval(ticker);
     ticker = 0;
+    // 🔴 AN ABORT IS NOT A FAILURE. The reader asked something else; the answer they walked away
+    // from must not appear as an error under the box they are now typing in.
+    if (controller.signal.aborted) return;
     showError(el.askError, error instanceof Error ? error.message : 'The question failed.');
   } finally {
-    el.askButton.disabled = false;
-    el.askButton.textContent = 'Ask';
+    if (ticker !== 0) window.clearInterval(ticker);
+    ticker = 0;
+    // 🔴 ONLY THE NEWEST ASK OWNS THE BUTTON AND THE COUNTER. Without this guard the cancelled
+    // request's `finally` ran AFTER the new one had already put "Reading…" up, and re-enabled the
+    // button and relabelled it "Ask" while the new answer was still being written — the button
+    // became a lie, and a third click would have gone out on top of a running ask.
+    if (isCurrent()) {
+      asking = null;
+      el.askButton.disabled = false;
+      el.askButton.textContent = 'Ask';
+    }
   }
 }
 

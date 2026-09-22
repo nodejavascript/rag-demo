@@ -30,6 +30,13 @@ export interface AnswerOptions {
   /** Raise the sampling away from 0 when the words matter more than the repeatability. */
   temperature?: number;
   /**
+   * Stop the answer when the reader has gone — see `ChatOptions.signal`.
+   *
+   * A visitor clicking suggested questions quickly aborts the answer they walked away from, and this
+   * is what carries that abort past the socket and into the model call itself.
+   */
+  signal?: AbortSignal;
+  /**
    * Called as the answer is built, with a stage that has just FINISHED and how long it took.
    *
    * 🔴 THE THREE STAGES ARE REAL, AND ONE OF THEM IS HONESTLY LONG. George asked for progress while
@@ -297,7 +304,7 @@ export async function answer(
     temperature: options.temperature ?? DEFAULT_TEMPERATURE,
     numCtx: 8192,
     numPredict: 700,
-  });
+    signal: options.signal,  });
   const modelMs = Date.now() - modelStarted;
   report({ stage: 'model', ms: Date.now() - started, tookMs: modelMs });
 

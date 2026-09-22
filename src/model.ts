@@ -32,6 +32,15 @@ export interface ChatOptions {
   numCtx: number;
   /** Hard cap on the reply, so a runaway answer cannot fill the page. */
   numPredict: number;
+  /**
+   * Stop the call early — used when the reader has closed the page or asked a different question.
+   *
+   * 🔴 THE TIMEOUT ALONE WAS NOT ENOUGH. Aborting the browser's request closes the socket, but a
+   * server that does not notice goes on writing an answer nobody will read, holding a slot in
+   * `MAX_CONCURRENT_ASK` the whole time — so a reader clicking three suggested questions quickly
+   * would have found the FOURTH one refused by work they had already walked away from.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -145,7 +154,7 @@ export class Model {
     return headers;
   }
 
-  async #request<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
+  async #request<T>(path: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
     let response: Response;
     try {
@@ -153,9 +162,15 @@ export class Model {
         method: 'POST',
         headers: this.#headers(),
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        // Whichever comes first: the call's own ceiling, or the reader leaving. `AbortSignal.any`
+        // keeps the timeout in place even when a caller supplies a signal of its own.
+        signal: signal
+          ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal])
+          : AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
+      // An abort by the caller is not a fault of the model server, so it is not reported as one.
+      if (signal?.aborted) throw new AppError('The reader left before the model finished.', 499);
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
       throw new AppError(
         `The model server at ${this.config.baseUrl} ${timedOut ? 'timed out' : 'is not answering'}.` +
@@ -285,7 +300,8 @@ export class Model {
             num_predict: options.numPredict,
           },
         },
-        180_000
+        180_000,
+        options.signal
       );
       const content = body.message?.content?.trim();
       if (!content) throw new AppError('The model server returned an empty reply.', 503);
@@ -300,7 +316,8 @@ export class Model {
         max_tokens: options.numPredict,
         messages,
       },
-      180_000
+      180_000,
+      options.signal
     );
     const content = body.choices?.[0]?.message?.content?.trim();
     if (!content) throw new AppError('The model provider returned an empty reply.', 503);

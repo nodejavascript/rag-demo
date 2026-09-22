@@ -515,8 +515,22 @@ const server = createServer((request, response) => {
           });
         }
         const send = (line: unknown): void => {
-          if (streaming) response.write(`${JSON.stringify(line)}\n`);
+          // 🔴 A SOCKET THE READER HAS CLOSED IS NOT A SOCKET TO WRITE TO. The page aborts an ask the
+          // moment a different question is clicked, so a write here can land on a destroyed stream —
+          // which at best is a no-op and at worst emits an error nobody can act on.
+          if (streaming && !response.writableEnded && !response.destroyed) {
+            response.write(`${JSON.stringify(line)}\n`);
+          }
         };
+        // 🔴 AND THE SAME ABORT REACHES THE MODEL, which is the half that matters on a busy host.
+        // Closing the page or clicking another question closes the socket; without this the server
+        // went on writing an answer nobody would read, holding a slot in `MAX_CONCURRENT_ASK` for up
+        // to 20 seconds. Three impatient clicks would then have had the FOURTH question refused by
+        // work the reader had already abandoned.
+        const gone = new AbortController();
+        response.on('close', () => {
+          if (!response.writableEnded) gone.abort();
+        });
         const started = Date.now();
         // Counted here and released in the `finally`, so every way out of the call — a refusal, a
         // provider error, a thrown exception, a closed socket — gives the slot back.
@@ -525,6 +539,7 @@ const server = createServer((request, response) => {
           const result = await answer(store, model, payload.docId, (payload.question ?? '').trim(), {
             retrieve: DEFAULT_RETRIEVE,
             onStage: (stage) => send({ type: 'progress', ...stage }),
+            signal: gone.signal,
           } satisfies AnswerOptions);
           console.log(
             `asked doc=${payload.docId} mode=${result.mode} notes=${result.sources.length} ms=${Date.now() - started}`
@@ -536,6 +551,11 @@ const server = createServer((request, response) => {
             sendJson(response, 200, result);
           }
         } catch (error) {
+          // An abandoned ask is not a failure, so it is logged as what it is and nothing is sent.
+          if (gone.signal.aborted) {
+            console.log(`abandoned doc=${payload.docId} ms=${Date.now() - started}`);
+            return;
+          }
           if (streaming) {
             send({ type: 'error', error: error instanceof Error ? error.message : 'That question failed.' });
             response.end();
