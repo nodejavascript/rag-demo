@@ -33,6 +33,7 @@ export type DocumentKind =
   | 'minutes'
   | 'transcript'
   | 'statement'
+  | 'long'
   | 'general';
 
 export interface Described {
@@ -140,6 +141,21 @@ export const BY_KIND: Record<DocumentKind, string[]> = {
     'Which payees or merchants are named?',
     'What kinds of transactions appear?',
   ],
+  /**
+   * A long document that is none of the others — a book, a collection, a thesis.
+   *
+   * George's own case, 22 Sep 2026: 175 pages of collected newspaper columns, 508,035 characters. There
+   * is no byline pattern to trust (every column has one), no single contract's vocabulary, no columns of
+   * amounts, and its dates are publication dates rather than a diary's entries — so the honest label is
+   * what it is, and the questions are the ones a reader of a long collection actually has.
+   */
+  long: [
+    'What is this document about?',
+    'What themes does it return to?',
+    'Who is mentioned most?',
+    'What does it say at the beginning?',
+    'What does it say near the end?',
+  ],
   general: [...GENERAL],
 };
 
@@ -152,6 +168,7 @@ const LABELS: Record<DocumentKind, string> = {
   minutes: 'minutes of a meeting',
   transcript: 'a transcript',
   statement: 'a statement or a ledger',
+  long: 'a long document — a book or a collection',
   general: 'a document',
 };
 
@@ -205,9 +222,55 @@ const STATEMENT_MARKER = /\b(balance|transaction|debit|credit|invoice|payment re
 
 const AMOUNT = /(?:[$£€]\s?\d[\d,]*(?:\.\d{2})?|\b\d[\d,]*\.\d{2}\b)/;
 
+/**
+ * The marker patterns, exported so their behaviour can be MEASURED rather than guessed.
+ *
+ * 🔴 A HINT THAT WORKS ON A PAGE IS NOISE IN A BOOK. These counts were tuned against documents of a few
+ * hundred to a few thousand characters; the 508,035-character book that arrived on 22 Sep 2026 was read
+ * as *"minutes of a meeting"* because `present`, `chair` and `resolved` appear somewhere in half a
+ * million characters of prose. `tools/measure-kinds.mjs` uses these patterns to compare a real sample of
+ * each kind with that book, so the thresholds are set from measurements instead of intuition.
+ */
+export const SIGNALS = { MINUTES_MARKER, POLICY_MARKER, STATEMENT_MARKER, NEWS_MARKER };
+
 /** How many DIFFERENT markers of a kind appear — repetition is not evidence. */
 function distinct(text: string, pattern: RegExp): number {
   return new Set((text.match(pattern) ?? []).map((hit) => hit.toLowerCase())).size;
+}
+
+/**
+ * How often a kind's markers appear, per 1,000 characters — **the measure that does not grow with the
+ * document**.
+ *
+ * 🔴 THIS IS THE FIX TO A REAL MISREADING, MEASURED ON 22 SEP 2026. A 508,035-character book of
+ * collected newspaper columns was read as **"minutes of a meeting"**, because the minutes signal was
+ * `distinct(text, MINUTES_MARKER) >= 3` — and in half a million characters of prose, `present`, `chair`
+ * and `resolved` each appear somewhere. Three kinds misfired at once: minutes (7 distinct), terms (5)
+ * and a statement (5). Measured with `tools/measure-kinds.mjs`:
+ *
+ *   · the book: minutes markers **0.066 per 1,000 characters**;
+ *   · the built-in diary sample, about two thousand characters of ordinary prose: **0.531**;
+ *   · a real set of minutes or a real contract is denser still, because those words are the substance
+ *     of the document rather than words that happen to be in it.
+ *
+ * So a hint is only a signal when it is **dense for the document's own length**. On a page the floor is
+ * easy to clear; in a book it takes a document that really is that kind of document.
+ */
+function density(text: string, pattern: RegExp): number {
+  const global = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+  const hits = text.match(global) ?? [];
+  return (hits.length / Math.max(1, text.length)) * 1000;
+}
+
+/**
+ * One marker per 2,000 characters. Set from the measurement above: it sits ~8× above the book and ~10×
+ * below an ordinary short document, so nothing real on either side is near the line.
+ */
+const MIN_DENSITY = 0.5;
+
+/** True when a marker count is dense enough to mean something at this document's length. */
+function hinted(text: string, pattern: RegExp, distinctFloor: number): boolean {
+  return distinct(text, pattern) >= distinctFloor && density(text, pattern) >= MIN_DENSITY;
 }
 
 function lines(text: string): string[] {
@@ -256,22 +319,52 @@ export function detectKind(text: string, datedEntries: number): DocumentKind {
   const speakers = new Set(speakerLines.map((line) => line.split(':')[0]?.trim().toLowerCase() ?? ''));
   if (speakerLines.length >= 4 && speakers.size >= 2) return 'transcript';
 
-  if (distinct(text, MINUTES_MARKER) >= 3) return 'minutes';
+  if (hinted(text, MINUTES_MARKER, 3)) return 'minutes';
 
-  if (distinct(text, POLICY_MARKER) >= 5) return 'policy';
+  if (hinted(text, POLICY_MARKER, 5)) return 'policy';
 
   const amountLines = lines(text).filter((line) => AMOUNT.test(line)).length;
   if (distanceFromStatement(text, amountLines)) return 'statement';
 
-  if (datedEntries >= 3) return 'diary';
+  // 🔴 A DIARY IS A DOCUMENT WHOSE ENTRIES ARE MOSTLY DATED, NOT A DOCUMENT WITH SOME DATES IN IT.
+  // Same misreading, same book: 675 entries, 175 of them carrying a complete date — a book of columns
+  // dated by the day each was published — and the old `datedEntries >= 3` read that as a diary. A real
+  // diary dates nearly every entry (the built-in sample has nine of nine), so the share is asked for.
+  const blocks = countBlocks(text);
+  const datedShare = blocks > 0 ? datedEntries / blocks : 0;
+  if (datedEntries >= 3 && datedShare >= 0.4) return 'diary';
+
+  // 🔴 A LONG DOCUMENT THAT LOOKS LIKE NOTHING ELSE IS SAID TO BE THAT, RATHER THAN CALLED "A DOCUMENT".
+  // 175 pages of collected columns are not minutes, not a contract, not a statement and not a diary, and
+  // the honest answer is that it is a long document. Its questions are better than the diary's.
+  if (text.length >= LONG_DOCUMENT_CHARS) return 'long';
 
   return 'general';
 }
 
 /** A statement is mostly numbers in columns, and says so in its own words. */
 function distanceFromStatement(text: string, amountLines: number): boolean {
-  return amountLines >= 5 && distinct(text, STATEMENT_MARKER) >= 3;
+  return amountLines >= 5 && hinted(text, STATEMENT_MARKER, 3);
 }
+
+/**
+ * How many blocks the text is divided into — the rough count of entries a document holds.
+ *
+ * It exists so the share of entries carrying a date can be asked for. The indexer counts entries its own
+ * way; this only has to be close enough to tell "nearly every entry is dated" from "a few are".
+ */
+function countBlocks(text: string): number {
+  return text.split(/\n\s*\n/).filter((block) => block.trim().length > 0).length;
+}
+
+/**
+ * Where a document stops being a page and starts being a book.
+ *
+ * 40,000 characters is about 6,000 words — longer than any letter, memo, minutes or article anyone reads
+ * in one sitting, and short enough that a genuinely long contract is still caught by the density check
+ * above rather than landing here.
+ */
+const LONG_DOCUMENT_CHARS = 40_000;
 
 /** The kind, the word for it, and the questions worth offering. */
 export function describeDocument(text: string, datedEntries: number): Described {

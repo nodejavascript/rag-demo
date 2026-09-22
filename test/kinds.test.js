@@ -261,3 +261,62 @@ test('a page that only says when it was posted is not a news article', () => {
   // becomes "a news article". This is the guard against that.
   assert.equal(detectKind(FORUM_POST, 0), 'general');
 });
+
+/* --------------------------------------------- a long document that is none of them */
+
+/**
+ * 🔴 A BOOK IS NOT MINUTES, AND THIS IS THE CASE THAT PROVED IT.
+ *
+ * George's book — 175 pages of collected newspaper columns, 508,035 characters, `rays-of-wit.pdf` — was
+ * read as **"minutes of a meeting"**, so it was offered *"What was decided?"* and *"Who attended?"*. The
+ * cause was that three kinds were decided by COUNTING DISTINCT MARKER WORDS, which is a fine test on a
+ * page and no test at all in a book: across half a million characters of prose, `present`, `chair`,
+ * `resolved`, `party` and `balance` each appear somewhere. Measured with `tools/measure-kinds.mjs`, the
+ * book carries minutes markers at **0.066 per 1,000 characters** where even an ordinary short document
+ * runs at **0.531**, so the signals now have to be DENSE for the document's length.
+ */
+function longProse(blocks) {
+  const out = [];
+  for (let i = 0; i < blocks; i += 1) {
+    out.push(
+      `The fishing season opened on a Saturday in May and the whole town seemed to be at the bridge by ` +
+        `seven in the morning. Nobody caught anything worth keeping, which is the point of opening day. ` +
+        `Later we sat in the kitchen and argued about the hockey, and someone resolved a long-standing ` +
+        `disagreement about the best way to sharpen a hook before the kettle boiled.`
+    );
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+test('a long document is not read as minutes, a contract or a diary', () => {
+  const book = longProse(560);
+  assert.ok(book.length > 150_000, `the fixture must be book-sized — it is ${book.length} characters`);
+  // The count a book of dated columns produces: many entries, a fair number of dates, and markers that
+  // appear only because English prose contains those words.
+  const described = describeDocument(book, 175);
+  assert.equal(described.kind, 'long', 'a book must not be read as minutes, a policy or a diary');
+  assert.equal(described.label, 'a long document — a book or a collection');
+  assert.ok(
+    !described.suggestions.includes('What was decided?'),
+    'the minutes questions must not be offered on a book'
+  );
+  assert.ok(
+    described.suggestions.includes('What themes does it return to?'),
+    'a book should be asked what it is about rather than what was decided'
+  );
+});
+
+test('a real diary is still a diary, because its entries are dated', () => {
+  // The same misreading, one kind along: the old rule was `datedEntries >= 3`, so a book whose columns
+  // carry publication dates passed as a diary. A diary dates nearly every entry, and that share is now
+  // part of the test.
+  const diary = Array.from({ length: 12 }, (_, i) => {
+    const day = String((i % 27) + 1).padStart(2, '0');
+    return `2026-03-${day}\nIt rained again and I stayed in with the dog.`;
+  }).join('\n\n');
+  assert.equal(detectKind(diary, 12), 'diary');
+  // And the same text with the dates stripped of their share is not a diary: many entries, few dates.
+  const sprinkled = longProse(6);
+  assert.equal(detectKind(sprinkled, 2), 'general', 'two dates in six blocks is not a diary');
+});

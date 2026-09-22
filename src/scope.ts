@@ -101,6 +101,10 @@ export const NOT_LIST_QUESTIONS: string[] = [
   'Who wrote it, and when was it published?',
   'What does it say happened?',
   'What does it say happens next?',
+  // a long document — a summary, a theme, and what each end holds are single answers
+  'What themes does it return to?',
+  'What does it say at the beginning?',
+  'What does it say near the end?',
 ];
 
 /** The net for a question someone TYPED, where there is no registry to consult. */
