@@ -208,3 +208,56 @@ SKILLS
 TypeScript, Node.js, PostgreSQL, Docker, AWS`;
   assert.equal(detectKind(resume, 0), 'resume');
 });
+
+/* ------------------------------------------------------ a news article */
+
+/**
+ * 🔴 A PASTED NEWS PAGE IS ITS OWN KIND, AND IT WAS NOT ONE UNTIL 22 SEP 2026.
+ *
+ * George pasted a Fox News page and the page called it *"a document"* — *"it should have said a news
+ * article. is the agent even readying the input?"*. The text below is a faithful slice of what a
+ * browser paste actually contains: navigation first, then the story, then comments and a footer of
+ * forty links. **That junk is the whole difficulty** — the document has no shape for the other kinds
+ * to read, which is why the detection leans on the byline and the publication stamp.
+ */
+const NEWS = `Fox NewsU.S. Politics World OpinionMedia Entertainment OutKick Sports MoreExpand / Collapse searchLog InWatch TV
+Recommended VideosRecommended ArticlesWelder-turned-lawmaker warns AI could be 'nuclear bomb' for workers
+Trump defends US interventions abroad ahead of 'big decision' on Iran: 'Settling years of unfinished business'
+By Eric Mack Fox NewsPublished September 22, 2026 10:51am EDT | Updated September 22, 2026 11:37am EDT
+Iran made 'big mistake' before Operation Midnight Hammer, Trump says
+President Donald Trump told the United Nations General Assembly Tuesday that the U.S. confronted an Iranian threat that "far too many preferred to ignore."
+"I have a big decision to make," Trump told the United Nations General Assembly in his morning address. (Chip Somodevilla/Getty Images)
+Trump expressed hope that a deal with the "cowards and traitors" of Iran will come "right after the election."
+Eric Mack is a breaking news reporter and writer Sunday through Thursday with a particular interest in stories that lead the news cycle.
+CLICK HERE TO DOWNLOAD THE FOX NEWS APP
+Sponsored Stories You May LikeIs Leafs captain Auston Matthews engaged?
+See MoreReplyView 75 repliesRelated TopicsDonald TrumpUnited NationsWar With Iran1.38K Comments
+More From Fox NewsIlhan Omar says she's in dark on criminal investigation confirmed by Homan
+Terms of UsePrivacy PolicyHelpContact UsNews SitemapThis material may not be published, broadcast, rewritten, or redistributed.`;
+
+/** A page that says only when it was posted is not a news article — it is something unclassified. */
+const FORUM_POST = `Posted 9:30pm
+My boiler stopped working this evening and the landlord has not answered. The unit is cold and the
+building manager says it is a building-wide problem. I have written down the dates and kept the
+messages, and I will try the emergency line in the morning if nothing has changed by then.`;
+
+test('a pasted news page is recognised as a news article', () => {
+  const described = describeDocument(NEWS, 1);
+  assert.equal(described.kind, 'news', 'a news page must not be read as a general document');
+  assert.equal(described.label, 'a news article');
+  assert.equal(described.suggestions[0], 'Who wrote it, and when was it published?');
+  assert.ok(
+    described.suggestions.some((question) => /quoted/i.test(question)),
+    'a news story is built on who is quoted, so it must be asked about'
+  );
+  assert.ok(
+    !described.suggestions.includes('Which month was busiest?'),
+    'the diary questions must not be offered on a news page'
+  );
+});
+
+test('a page that only says when it was posted is not a news article', () => {
+  // The weak route needs the surrounding words as well, or every forum post and every comment thread
+  // becomes "a news article". This is the guard against that.
+  assert.equal(detectKind(FORUM_POST, 0), 'general');
+});

@@ -55,6 +55,9 @@ export const LIST_QUESTIONS: string[] = [
   'What are the responsibilities?',
   'What are the performance objectives?',
   'Which technologies and tools are named?',
+  // news article
+  'Who is quoted?',
+  'Which places and organisations are named?',
   // statement of accounts
   'What amounts are listed?',
   'Which payees or merchants are named?',
@@ -94,6 +97,10 @@ export const NOT_LIST_QUESTIONS: string[] = [
   'What date range does it cover?',
   // job description — one thing said in one place, or nothing said at all
   'What does it say about where and how the work is done?',
+  // news article — a byline, a narration and a look forward are each single answers
+  'Who wrote it, and when was it published?',
+  'What does it say happened?',
+  'What does it say happens next?',
 ];
 
 /** The net for a question someone TYPED, where there is no registry to consult. */

@@ -24,7 +24,16 @@
  * one ever does.
  */
 
-export type DocumentKind = 'resume' | 'job' | 'diary' | 'policy' | 'minutes' | 'transcript' | 'statement' | 'general';
+export type DocumentKind =
+  | 'resume'
+  | 'job'
+  | 'news'
+  | 'diary'
+  | 'policy'
+  | 'minutes'
+  | 'transcript'
+  | 'statement'
+  | 'general';
 
 export interface Described {
   kind: DocumentKind;
@@ -84,6 +93,26 @@ export const BY_KIND: Record<DocumentKind, string[]> = {
     'Which technologies and tools are named?',
     'What does it say about where and how the work is done?',
   ],
+  /**
+   * A news story.
+   *
+   * George, 22 Sep 2026, after pasting a Fox News page: *"it should have said a news article. is the
+   * agent even readying the input?"*. It had come back as *"a document"*, so the questions on offer
+   * were written for a diary — the same failure the job posting produced an hour earlier, in the
+   * other document people paste constantly.
+   *
+   * A pasted news page arrives with its navigation, its sponsored links and its footer attached, and
+   * those carry no signal at all — so the detection leans on the two things an article cannot do
+   * without: **a byline and a publication stamp with a time of day**. The junk is why the markers are
+   * counted rather than the headings being trusted.
+   */
+  news: [
+    'Who wrote it, and when was it published?',
+    'What does it say happened?',
+    'Who is quoted?',
+    'Which places and organisations are named?',
+    'What does it say happens next?',
+  ],
   diary: [...GENERAL],
   policy: [
     'What does it say about termination?',
@@ -117,6 +146,7 @@ export const BY_KIND: Record<DocumentKind, string[]> = {
 const LABELS: Record<DocumentKind, string> = {
   resume: 'a resume',
   job: 'a job description',
+  news: 'a news article',
   diary: 'a diary or a journal',
   policy: 'terms or an agreement',
   minutes: 'minutes of a meeting',
@@ -150,6 +180,20 @@ const JOB_SECTION = /^(about (the )?(role|you|us)|the role|role overview|positio
  * hiring — *"we are hiring"*, *"apply now"*, *"salary range"*.
  */
 const JOB_MARKER = /\b(job description|job posting|we are (looking|seeking|hiring)|we're (looking|seeking|hiring)|the successful candidate|you will (own|lead|build|design|work|be|join)|you.?ll (own|lead|build|design|work|be|join)|the role (is|will)|this role|applicants?|apply (now|by|with|today|below)|salary range|annual salary|per annum|hourly rate|base salary|benefits package|paid time off|vacation entitlement|probationary period|notice period|permanent (position|role|full)|full[- ]time|part[- ]time|hybrid|on[- ]site|work from home|remote work|equity)\b/gi;
+
+/**
+ * A NEWS STORY IS RECOGNISED BY ITS BYLINE AND ITS PUBLICATION STAMP.
+ *
+ * 🔴 WHY THOSE TWO AND NOT THE HEADINGS. A news page pasted from a browser arrives wrapped in its own
+ * furniture — navigation, sponsored stories, a footer of forty links — so the document has no shape
+ * the other kinds can read, and those two things are what an article cannot be published without:
+ * *"By Eric Mack"* and *"Published September 22, 2026 10:51am EDT"*. Both survive the junk.
+ */
+const NEWS_BYLINE = /\bby\s+[A-Z][a-z]+(?:\s+[A-Z][a-z'’-]+){1,2}\b/;
+const NEWS_STAMP = /\b(published|updated|posted)\b[^\n]{0,60}?\b\d{1,2}:\d{2}\s?(?:am|pm)\b/i;
+
+/** And the words a news page carries about itself, counted because the furniture is not trustworthy. */
+const NEWS_MARKER = /\b(news|reporter|correspondent|associated press|reuters|getty images|ap photo|in a statement|told (?:the|fox|reporters|congress)|according to|breaking news|click here to download|advertisement|subscribe|related topics|comments)\b/gi;
 
 const SPEAKER = /^[A-Z][A-Za-z'’-]*(?:\s+[A-Z][A-Za-z'’-]*){0,3}:\s+\S/;
 
@@ -197,6 +241,16 @@ export function detectKind(text: string, datedEntries: number): DocumentKind {
   const jobSections = lines(text).filter((line) => line.length > 0 && line.length <= 48 && JOB_SECTION.test(line));
   const jobMarks = distinct(text, JOB_MARKER);
   if (jobSections.length >= 2 || (jobSections.length >= 1 && jobMarks >= 3) || jobMarks >= 6) return 'job';
+
+  // 🔴 A NEWS STORY IS CHECKED THIRD. Its two strong signals are a byline and a publication stamp with
+  // a time of day, which no other kind here carries: a diary has dates but no byline, minutes have
+  // names and times but no publication stamp, and a transcript has speakers, not a reporter.
+  // The weaker routes need the surrounding words as well, because a page that merely says *"Posted
+  // 9:30pm"* is not a news article — that is a forum post, and `general` is the honest answer for it.
+  const newsMarks = distinct(text, NEWS_MARKER);
+  const byline = NEWS_BYLINE.test(text);
+  const stamp = NEWS_STAMP.test(text);
+  if ((byline && stamp) || (stamp && newsMarks >= 4) || (byline && newsMarks >= 6)) return 'news';
 
   const speakerLines = lines(text).filter((line) => SPEAKER.test(line));
   const speakers = new Set(speakerLines.map((line) => line.split(':')[0]?.trim().toLowerCase() ?? ''));
