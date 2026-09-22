@@ -309,6 +309,35 @@ test('a paste too short to answer from is refused', async () => {
   }
 });
 
+test('the index records how long each of its stages took', async () => {
+  // 🔴 George, 22 September 2026: *"is there a new chart you can use to show how it was index"*.
+  // The chart draws `stats.stageMs`, so the three figures have to be measured by the indexer and
+  // kept on the record — and `saving` cannot be known until the write has happened, which is why
+  // the store patches it on afterwards rather than the indexer guessing it beforehand.
+  //
+  // ⚠ AND `embedding` MUST BE THE SAME NUMBER AS `embeddingMs`. Two stopwatches for one stage is
+  // two figures that can disagree, and the page prints both: the document's title line says
+  // "indexed in N ms" from `embeddingMs` and the chart draws `stageMs.embedding`.
+  const { store, close } = scratch();
+  try {
+    const { document } = await indexDocument(store, stubModel(), { text: diary });
+    const stageMs = document.stats.stageMs;
+    assert.ok(stageMs, 'the index recorded no stage timings at all');
+    for (const [stage, ms] of Object.entries(stageMs)) {
+      assert.equal(typeof ms, 'number', `${stage} is not a number`);
+      assert.ok(ms >= 0, `${stage} is negative`);
+    }
+    assert.equal(stageMs.embedding, document.stats.embeddingMs, 'two different measurements of one stage');
+    // It has to survive the write: the whole point is that the chart still draws on a reload, and
+    // the timings are patched onto the row after it is inserted.
+    const stored = store.getDocument(document.id);
+    assert.ok(stored?.stats.stageMs, 'the timings did not survive the write');
+    assert.deepEqual(stored.stats.stageMs, stageMs);
+  } finally {
+    close();
+  }
+});
+
 /* ---------------------------------------------------------------- retrieval */
 
 test('the keyword half finds an exact word, and fusion keeps it', async () => {

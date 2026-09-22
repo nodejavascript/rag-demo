@@ -126,11 +126,14 @@ test('the line explaining the Index button lines up with the controls around it'
   // see a layout, but it can insist the rule that fixes it exists and says the right thing. Without
   // this, deleting one line of CSS puts the 43px indent straight back and nothing else notices.
   const css = site('styles.css');
-  const at = css.indexOf('#index-hint {');
-  assert.notEqual(at, -1, 'nothing overrides the 43px step indent for #index-hint');
+  const at = css.indexOf('.row + p.hint {');
+  assert.notEqual(at, -1, 'nothing overrides the 43px step indent for a hint that follows a row of controls');
   const rule = css.slice(at, css.indexOf('}', at));
-  assert.match(rule, /margin-left:\s*0/, 'the line is indented away from the two rows it sits between');
-  assert.match(rule, /margin-top:\s*[1-9]/, 'and it is still touching the buttons above it');
+  assert.match(rule, /margin:\s*\d+px\s+0/, 'the line is indented away from the two rows it sits between');
+  assert.match(rule, /16px/, 'and it is still touching the buttons above it');
+  // And no element may quietly re-indent one of them back to 43px — which is how the step-1 fix
+  // would be undone by a later `#index-hint` rule with a different value.
+  assert.doesNotMatch(css, /#index-hint\s*\{[^}]*margin-left:\s*(?!0)[0-9]/, '#index-hint is indented again');
 });
 
 test('and the pictures it finds are called images, and the counting is only ever "in code"', () => {
@@ -151,6 +154,58 @@ test('and the pictures it finds are called images, and the counting is only ever
   assert.match(page, /in code/, 'and the page never says "in code" at all');
   const server = readFileSync(join(here, '..', 'src', 'server.ts'), 'utf8');
   assert.match(server, /pages are images rather than words/, 'the scanned-PDF message went back to "pictures"');
+});
+
+test('and the two mention charts are ranked highest-first, with gradient bars', () => {
+  // George, 22 September 2026: *"Who and what appears when could sort my the value highest on top,
+  // maybe gradient colors for the bars, same with ### What it is about"*. Three asks, and all three
+  // are checkable in the source: both charts rank by value, and the bars are drawn as gradients.
+  // The heat rows are ranked in `charts.ts` (where the grid is built, so the chart and the tally
+  // cannot disagree); the composition rows in `app.ts`, where they are gathered.
+  const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
+  assert.match(
+    app,
+    /mentions\.amounts\.slice\(0, 2\)[\s\S]{0,160}?\.sort\(\(a, b\) => b\.value - a\.value\)/,
+    'the composition rows are not ranked by their value'
+  );
+  assert.match(
+    app,
+    /drawRows\(el\.composition, rows, \{ gradient: true \}\)/,
+    'the composition bars are no longer drawn as gradients'
+  );
+  assert.match(app, /function ramp\(/, 'the value colour ramp is gone, so the bars and the heat map disagree');
+  const charts = readFileSync(join(here, '..', 'src', 'charts.ts'), 'utf8');
+  assert.match(charts, /\.sort\(\(a, b\) => b\.count - a\.count\)/, 'the heat rows are not ranked by count');
+});
+
+test('the suggested questions come before the sentence about how questions are matched', () => {
+  // George, 22 Sep 2026: the line reading *"This looks like a transcript — try one of these:"* and
+  // the questions under it *"can go above Ask in your own words. It looks for what the document
+  // says…"*. An example question this document can actually answer is more use at the top of the
+  // step than a sentence about how matching works; the sentence then explains why those examples
+  // work. Asserted on the order in the shipped markup, because that order IS the change.
+  const stepThree = step(site('index.html'), 'step-3');
+  const suggestions = stepThree.indexOf('id="suggestions"');
+  // 🔴 THE HINT IS FOUND BY ITS ELEMENT, NOT BY ITS WORDS. Searching for the phrase
+  // "Ask in your own words" found it in the COMMENT ABOVE — which quotes George asking for this
+  // very change — so the guard failed on the fix it was written to protect. A guard that searches
+  // prose will always find its own comment, and the comment is usually nearer the top.
+  const hint = stepThree.indexOf('<p class="hint">');
+  const input = stepThree.indexOf('id="question"');
+  assert.ok(suggestions !== -1 && hint !== -1 && input !== -1, 'step 3 must hold the suggestions, the hint and the box');
+  assert.ok(suggestions < hint, 'the suggestions went back below the hint');
+  assert.ok(suggestions < input, 'and they must come before the box they are suggestions for');
+});
+
+test('and step 2 carries the chart of how it was indexed', () => {
+  // George, 22 Sep 2026: *"is there a new chart you can use to show how it was index"*. It lives in
+  // step 2 with the other charts — but only when the document carries timings, so an older record
+  // hides it instead of drawing three zeroes.
+  const html = site('index.html');
+  assert.match(step(html, 'step-2'), /id="index-stages"/, 'the index-stage chart is not in step 2');
+  const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
+  assert.match(app, /renderIndexStages\(document\)/, 'nothing renders it');
+  assert.match(app, /document\.stats\.stageMs/, 'and it does not read the measured timings');
 });
 
 /* ------------------------------------------------------------------ identity */

@@ -25,6 +25,7 @@ import {
   buildSpine,
   continuousMonths,
   emptyMonths,
+  gridRows,
 } from '../dist/charts.js';
 
 /* ---------------------------------------------------------------- the month series */
@@ -307,4 +308,34 @@ test('and a document with no dates at all yields no timeline rather than an empt
   assert.deepEqual(spans.spans, []);
   assert.equal(spans.from, '', 'no axis is claimed');
   assert.equal(axisMonths(spans), 0);
+});
+
+/* ------------------------------------------------- and what the heat map ranks */
+
+test('the heat map\u2019s rows are ranked by how much the document mentions them', () => {
+  // 🔴 George, 22 September 2026: *"Who and what appears when could sort my the value highest on
+  // top"*. The rows used to keep the tally's own grouping — every person, then every place, then
+  // every amount — so the chart's order said which KIND each thing was rather than which one the
+  // document is most about.
+  //
+  // The counts are deliberately out of step with the kinds here: sorting within a kind, or sorting
+  // the kinds, cannot produce this order. Only ranking all five rows by count can.
+  const rows = gridRows({
+    people: [
+      { value: 'Necole', count: 4 },
+      { value: 'Kennedy', count: 1 },
+    ],
+    places: [
+      { value: 'Windsor', count: 9 },
+      { value: 'Hamilton', count: 2 },
+    ],
+    amounts: [{ value: '$1,200', count: 6 }],
+  });
+  assert.deepEqual(
+    rows.map((row) => row.value),
+    ['Windsor', '$1,200', 'Necole', 'Hamilton', 'Kennedy'],
+    'the rows are not ranked highest-first across kinds'
+  );
+  // And the kind travels with the value, because the grid draws from this list and nothing else.
+  assert.deepEqual(rows.map((row) => row.kind), ['place', 'amount', 'person', 'place', 'person']);
 });

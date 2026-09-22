@@ -106,17 +106,30 @@ export const GRID_ROWS = { people: 3, places: 3, amounts: 2 } as const;
  *
  * The chart and the tally must never disagree — a reader sees both at once — so the rows are
  * derived from the same list the tally was counted from, never re-extracted from the text.
+ *
+ * 🔴 AND THE ROWS ARE SORTED BY HOW MUCH THE DOCUMENT MENTIONS THEM, HIGHEST FIRST. George,
+ * 22 September 2026: *"Who and what appears when could sort my the value highest on top"*. They
+ * used to keep the tally's own grouping — every person, then every place, then every amount — so
+ * the chart's order was an artefact of which kind each thing happened to be, and a reader looking
+ * for the thing that dominates the document had to find it. The tally already ranks each kind by
+ * count; this ranks the eight rows against each other.
+ *
+ * ⚠ **IT CHANGES A STORED FIELD, SO `PIPELINE_VERSION` WENT UP WITH IT (6 → 7).** The grid is
+ * built at index time and kept on the record, so without the bump a returning reader would be
+ * served the old order from the index cache and the fix would look like it had not shipped.
  */
 export function gridRows(mentions: {
-  people: readonly { value: string }[];
-  places: readonly { value: string }[];
-  amounts: readonly { value: string }[];
+  people: readonly { value: string; count: number }[];
+  places: readonly { value: string; count: number }[];
+  amounts: readonly { value: string; count: number }[];
 }): { value: string; kind: 'person' | 'place' | 'amount' }[] {
   return [
-    ...mentions.people.slice(0, GRID_ROWS.people).map((m) => ({ value: m.value, kind: 'person' as const })),
-    ...mentions.places.slice(0, GRID_ROWS.places).map((m) => ({ value: m.value, kind: 'place' as const })),
-    ...mentions.amounts.slice(0, GRID_ROWS.amounts).map((m) => ({ value: m.value, kind: 'amount' as const })),
-  ];
+    ...mentions.people.slice(0, GRID_ROWS.people).map((m) => ({ value: m.value, count: m.count, kind: 'person' as const })),
+    ...mentions.places.slice(0, GRID_ROWS.places).map((m) => ({ value: m.value, count: m.count, kind: 'place' as const })),
+    ...mentions.amounts.slice(0, GRID_ROWS.amounts).map((m) => ({ value: m.value, count: m.count, kind: 'amount' as const })),
+  ]
+    .sort((a, b) => b.count - a.count)
+    .map(({ value, kind }) => ({ value, kind }));
 }
 
 /**
@@ -136,9 +149,9 @@ export function mentionGrid(
   stats: { perMonth: MonthPoint[]; firstDate: string | null; lastDate: string | null },
   entries: Parameters<typeof buildMentionMonths>[2],
   mentions: {
-    people: readonly { value: string }[];
-    places: readonly { value: string }[];
-    amounts: readonly { value: string }[];
+    people: readonly { value: string; count: number }[];
+    places: readonly { value: string; count: number }[];
+    amounts: readonly { value: string; count: number }[];
   }
 ): MentionMonths | undefined {
   const grid = buildMentionMonths(

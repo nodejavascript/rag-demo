@@ -43,6 +43,19 @@ interface IndexStats {
   assumedYear: boolean;
   yearUsed: number | null;
   embeddingMs: number;
+  /**
+   * How long each stage of the index took, in milliseconds.
+   *
+   * 🔴 THIS INTERFACE IS A HAND-KEPT MIRROR OF THE SERVER'S `IndexStats`, AND IT HAS TO BE. The
+   * site project compiles with `rootDir: src/site`, so it cannot import `src/types.ts` without
+   * dragging the server into the browser bundle. That means **a field added to the server's stats
+   * must be added here too, in the same commit** — the compiler says so, which is how this one was
+   * caught, but only because the chart reads it.
+   *
+   * Optional because a document indexed before the field existed carries no timings, and the chart
+   * hides itself rather than drawing three zeroes.
+   */
+  stageMs?: { reading: number; embedding: number; saving: number };
 }
 
 interface DocumentView {
@@ -529,6 +542,53 @@ function fit(canvas: HTMLCanvasElement): Canvas | null {
  */
 const COLOURS = ['#5eead4', '#14b8a6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#f472b6', '#22d3ee'];
 
+/**
+ * The ramp every value-driven colour on this page is read from: cool where there is little, amber
+ * where there is most.
+ *
+ * 🔴 ONE RAMP, TWO CHARTS — AND THAT IS THE POINT. The bars and the heat cells used to carry their
+ * own colour rules (a per-row colour from the palette, and one hue at varying alpha), so the same
+ * value could be teal in one chart and amber in the other. A reader has to be able to learn what a
+ * colour means once. Warm means more, here and everywhere below.
+ */
+const RAMP = { low: '#0f766e', mid: '#22d3ee', high: '#fbbf24' } as const;
+
+/**
+ * A colour part-way between two hex colours, `t` running 0 → 1. **Always returns hex.**
+ *
+ * 🔴 IT RETURNED `rgb(…)` UNTIL 22 SEPTEMBER 2026 AND THAT THREW ON THE LIVE PAGE. `ramp()` feeds
+ * its result straight back into `mix()` — the bar's colour is one of the two colours the gradient
+ * is mixed from — so `mix()` was handed `rgb(47, 214, 226)` and took `hex.slice(1, 3)` off it:
+ * `parseInt('gb', 16)` is `NaN`, the canvas got `rgb(NaN, NaN, 62)` and `createLinearGradient`
+ * raised *"The value provided … could not be parsed as a color."* The exception came out of
+ * `renderComposition`, which runs **before** the heat map and the new stage chart, so one bad
+ * colour hid every chart on the step at once.
+ *
+ * **A helper that emits a format it cannot read is a bug waiting for its second caller** — and no
+ * unit test could see this, because nothing but a browser ever calls it.
+ */
+function mix(from: string, to: string, t: number): string {
+  const parts = (hex: string): number[] => [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+  const [r1, g1, b1] = parts(from);
+  const [r2, g2, b2] = parts(to);
+  const at = Math.max(0, Math.min(1, t));
+  const channel = (a: number, b: number): number => Math.round(Math.max(0, Math.min(255, a + (b - a) * at)));
+  const hex = (value: number): string => value.toString(16).padStart(2, '0');
+  return `#${hex(channel(r1 as number, r2 as number))}${hex(channel(g1 as number, g2 as number))}${hex(
+    channel(b1 as number, b2 as number)
+  )}`;
+}
+
+/** The ramp itself: `t` from 0 (nothing) to 1 (the most anything on the chart is mentioned). */
+function ramp(t: number): string {
+  const at = Math.max(0, Math.min(1, t));
+  return at < 0.5 ? mix(RAMP.low, RAMP.mid, at * 2) : mix(RAMP.mid, RAMP.high, (at - 0.5) * 2);
+}
+
 
 /**
  * The one font every row label is measured and drawn with. Measuring and drawing must agree. */
@@ -584,7 +644,7 @@ function shortenToFit(ctx: CanvasRenderingContext2D, text: string, width: number
 function drawRows(
   canvas: HTMLCanvasElement,
   data: { label: string; value: number }[],
-  options: { colour?: string; decimals?: (value: number) => string } = {}
+  options: { colour?: string; decimals?: (value: number) => string; gradient?: boolean } = {}
 ): void {
   const surface = fit(canvas);
   if (!surface) return;
@@ -620,7 +680,13 @@ function drawRows(
     const y = 3 + at * rowH;
     const barH = Math.max(6, rowH - 6);
     const barW = Math.max(2, (row.value / max) * plotW);
-    const colour = options.colour ?? (COLOURS[at % COLOURS.length] as string);
+    // 🔴 A GRADIENT BAR RUNS THE LENGTH OF THE BAR — deep where it starts, bright at the value end
+    // — and its colour comes from the one ramp, so warm always means more. George, 22 Sep 2026:
+    // *"maybe gradient colors for the bars"*. The rows arrive sorted, so the strongest row is also
+    // the warmest: length and colour say the same thing rather than competing.
+    const share = Math.max(0, Math.min(1, row.value / max));
+    const colour =
+      options.colour ?? (options.gradient ? ramp(share) : (COLOURS[at % COLOURS.length] as string));
 
     ctx.fillStyle = '#b2d3d8';
     ctx.font = LABEL_FONT;
@@ -631,7 +697,14 @@ function drawRows(
     ctx.roundRect(labelW, y + 3, plotW, barH, barH / 2);
     ctx.fill();
 
-    ctx.fillStyle = colour;
+    if (options.gradient && barW > 2) {
+      const fade = ctx.createLinearGradient(labelW, 0, labelW + barW, 0);
+      fade.addColorStop(0, mix('#0b2f36', colour, 0.3));
+      fade.addColorStop(1, colour);
+      ctx.fillStyle = fade;
+    } else {
+      ctx.fillStyle = colour;
+    }
     ctx.beginPath();
     ctx.roundRect(labelW, y + 3, barW, barH, barH / 2);
     ctx.fill();
@@ -764,8 +837,12 @@ function drawHeat(canvas: HTMLCanvasElement, grid: MentionMonths): void {
 
     row.counts.forEach((count, col) => {
       const x = labelW + col * cellW;
-      const shade = count === 0 ? 0 : 0.16 + 0.84 * (count / max);
-      ctx.fillStyle = count === 0 ? '#12262c' : `rgba(94, 234, 212, ${shade.toFixed(3)})`;
+      // 🔴 THE SHADING IS A RAMP, NOT ONE COLOUR TURNED DOWN. A single hue at varying alpha says
+      // "more here" and nothing about how much more; the ramp says both, and matches the bars
+      // above it — George asked for it in the same breath as the bars (22 Sep 2026).
+      const take = count / max;
+      const shade = count === 0 ? 0 : 0.34 + 0.66 * take;
+      ctx.fillStyle = count === 0 ? '#12262c' : ramp(0.22 + 0.78 * take);
       ctx.beginPath();
       ctx.roundRect(x + 1, y + 1.5, Math.max(2, cellW - 2), Math.max(4, rowH - 3), 3);
       ctx.fill();
@@ -922,6 +999,9 @@ const el = {
   shapeTitle: $('shape-title'),
   shapeCards: $('shape-cards'),
   shapeWarnings: $('shape-warnings'),
+  indexStagesBox: $('index-stages-box'),
+  indexStages: $<HTMLCanvasElement>('index-stages'),
+  indexStagesNote: $('index-stages-note'),
   timeline: $<HTMLCanvasElement>('timeline'),
   timelineNote: $('timeline-note'),
   composition: $<HTMLCanvasElement>('composition'),
@@ -1250,6 +1330,7 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
 
   void renderComposition(document);
   renderHeat(document.mentions.byMonth);
+  renderIndexStages(document);
 }
 
 /**
@@ -1261,11 +1342,56 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
  */
 function renderComposition(document: DocumentView): void {
   const mentions = document.mentions;
-  const rows: { label: string; value: number }[] = [];
-  for (const mention of mentions.places.slice(0, 4)) rows.push({ label: mention.value, value: mention.count });
-  for (const mention of mentions.people.slice(0, 3)) rows.push({ label: mention.value, value: mention.count });
-  for (const mention of mentions.amounts.slice(0, 2)) rows.push({ label: mention.value, value: mention.count });
-  painting(el.composition, () => drawRows(el.composition, rows));
+  // 🔴 SORTED BY HOW OFTEN EACH THING IS MENTIONED, HIGHEST FIRST. George, 22 Sep 2026: *"same
+  // with ### What it is about"*. The rows used to keep the order they were gathered in — every
+  // place, then every person, then every amount — so the chart's order said which KIND each thing
+  // was rather than which one the document is most about.
+  const rows = [
+    ...mentions.places.slice(0, 4).map((mention) => ({ label: mention.value, value: mention.count })),
+    ...mentions.people.slice(0, 3).map((mention) => ({ label: mention.value, value: mention.count })),
+    ...mentions.amounts.slice(0, 2).map((mention) => ({ label: mention.value, value: mention.count })),
+  ].sort((a, b) => b.value - a.value);
+  painting(el.composition, () => drawRows(el.composition, rows, { gradient: true }));
+}
+
+/**
+ * How it was indexed — the three stages, in seconds, and what each of them produced.
+ *
+ * George, 22 Sep 2026: *"is there a new chart you can use to show how it was index"*. The numbers
+ * come from the indexer's own stopwatch (`stats.stageMs`), never from a clock the page started, and
+ * **the three bars share ONE unit — seconds** — so comparing their lengths is honest. What each
+ * stage produced is a count, so it belongs in the caption where it can be labelled, not in a bar
+ * whose length would be compared against seconds.
+ *
+ * ⚠ A DOCUMENT INDEXED BEFORE THIS FIELD EXISTED HIDES THE CHART rather than drawing three zeroes:
+ * an empty chart and a chart whose stages really took no time look identical on screen and mean
+ * opposite things. Same rule as the skip-a-stage-that-never-ran funnel.
+ */
+function renderIndexStages(document: DocumentView): void {
+  const stageMs = document.stats.stageMs;
+  const total = stageMs ? stageMs.reading + stageMs.embedding + stageMs.saving : 0;
+  if (!stageMs || total <= 0) {
+    el.indexStagesBox.hidden = true;
+    return;
+  }
+  el.indexStagesBox.hidden = false;
+  const seconds = (ms: number): string => `${(ms / 1000).toFixed(2)} s`;
+  el.indexStagesNote.textContent =
+    `${plural(document.stats.entries, 'entry', 'entries')} and ${plural(document.stats.chunks, 'note')} ` +
+    `in ${seconds(total)}: splitting the document and finding its dates took ${seconds(stageMs.reading)}, ` +
+    `embedding every note took ${seconds(stageMs.embedding)} — the stage that costs — and writing the ` +
+    `index took ${seconds(stageMs.saving)}.`;
+  painting(el.indexStages, () =>
+    drawRows(
+      el.indexStages,
+      [
+        { label: 'Reading and dating', value: stageMs.reading / 1000 },
+        { label: 'Embedding the notes', value: stageMs.embedding / 1000 },
+        { label: 'Writing the index', value: stageMs.saving / 1000 },
+      ],
+      { gradient: true, decimals: (value) => `${value.toFixed(2)} s` }
+    )
+  );
 }
 
 el.indexButton.addEventListener('click', () => void indexNow());

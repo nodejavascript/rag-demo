@@ -53,7 +53,7 @@ export interface IndexResult {
  * nothing in the code looks wrong. **Bump this whenever the chunker, the date parser,
  * the enrichment or the stored schema changes.**
  */
-export const PIPELINE_VERSION = 6;
+export const PIPELINE_VERSION = 7;
 
 export function fingerprintOf(text: string, embedModel: string): string {
   return createHash('sha256').update(`${PIPELINE_VERSION}\u0000${embedModel}\u0000${text}`).digest('hex');
@@ -126,6 +126,9 @@ export async function indexDocument(
 
   const built = build(prepared.text, input.yearHint ?? null, prepared.images);
   report('reading', 1, 1);
+  // The reading stage is over the moment the splitter and the date parser have finished. Measured
+  // here rather than timed with a stopwatch around a section: the reader is shown this number.
+  const readingMs = Date.now() - startedAt;
 
   if (built.stats.entries === 0 || built.chunks.length === 0) {
     throw new AppError('Nothing in that text could be read as an entry. Is it really text?', 400);
@@ -158,7 +161,12 @@ export async function indexDocument(
 
   report('saving', 0, 1);
 
-  const stats: IndexStats = { ...built.stats, embeddingMs };
+  const stats: IndexStats = {
+    ...built.stats,
+    embeddingMs,
+    // `stageMs` is NOT set here: the write's own duration cannot be known until it has happened,
+    // so it is patched on afterwards by `store.setStageMs` — see the comment there.
+  };
 
   const ttlHours = input.ttlHours ?? DEFAULT_TTL_HOURS;
   const createdAt = nowIso();
@@ -190,7 +198,13 @@ export async function indexDocument(
     entries: built.stats.entries,
   };
 
+  const savingStarted = Date.now();
   store.insert(record, built.entries, built.chunks, vectors);
+  const savingMs = Date.now() - savingStarted;
+  // The three stages a reader can see, each measured as it ran. `embedding` is the SAME number as
+  // `embeddingMs` — one measurement with one source, never a second stopwatch that could disagree
+  // with the figure printed in the document's own title line.
+  store.setStageMs(record.id, { reading: readingMs, embedding: embeddingMs, saving: savingMs });
   report('saving', 1, 1);
 
   const document = store.getDocument(record.id);

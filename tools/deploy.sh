@@ -70,8 +70,19 @@ done
 # says so, which is the intended behaviour. So report it, do not fail on it.
 printf '  %-24s %s\n' "/healthz" "$(curl -s -o /dev/null -w '%{http_code}' https://rag-demo.nodejavascript.com/healthz)"
 
+# 🔴 THE BROWSER SUITE RUNS HERE TOO, AND THE LAST TWO CHECKS RUN AGAINST THE LIVE SITE — because on
+# 22 September 2026 a colour helper threw inside the composition renderer and **hid all three charts
+# on step 2 at once, silently.** `npm test` cannot see it (no browser), and this repo's browser suite
+# skips every test that needs a model — indexing needs one, and the key is on the droplet. So the
+# check that would have caught it has to run where the model is, which is here.
+echo "== the browser suite, against a local server =="
+npm run test:e2e
+
 echo "== the live cookie gate (a real browser, watching the network) =="
 node tools/verify-live-consent.mjs
 
+echo "== the live charts (a real browser, indexing a document on the deployed site) =="
+node tools/verify-live-charts.mjs
+
 echo
-echo "deployed. The browser suite against a local server is: npm run test:e2e"
+echo "deployed."

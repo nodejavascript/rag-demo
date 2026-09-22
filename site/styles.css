@@ -201,16 +201,16 @@ main { padding-block: 32px 60px; }
 }
 .step-head h2 { font-size: 21px; margin: 0; letter-spacing: -0.02em; font-weight: 640; }
 .step > p.hint { color: var(--muted); font-size: 14.5px; margin: 0 0 16px 43px; max-width: 74ch; }
-/* 🔴 THE ONE HINT THAT SITS BETWEEN TWO ROWS OF CONTROLS LINES UP WITH THEM, NOT WITH THE HEADING.
-   `.step > p.hint` indents 43px so a hint reads as a subtitle under the step's number badge.
-   Right for a hint directly beneath a heading; wrong for this one, which sits between the row of
-   file buttons and the row holding "Index it".
-   Measured in a live browser, 22 Sep 2026 — George, quoting the line: *"this text is misaligned
-   and crowded"*: the file-button row started at x=45, the "Index it" row at x=45, and the
-   paragraph explaining that button at x=88. It also carried NO top margin (`margin: 0 0 16px
-   43px`), so it touched the buttons above it. Worth 16px of air and the same left edge, and
-   guarded in test/site.test.js so the indent cannot come back. */
-#index-hint { margin-top: 16px; margin-left: 0; }
+/* 🔴 A HINT THAT SITS BETWEEN TWO ROWS OF CONTROLS LINES UP WITH THEM, NOT WITH THE HEADING.
+   `.step > p.hint` indents 43px so a hint reads as a subtitle under the step's number badge —
+   right for a hint directly beneath a heading, wrong for one that follows a row of buttons.
+   Measured in a live browser, 22 Sep 2026, on the step-1 line George called "misaligned and
+   crowded": the file-button row at x=45, the "Index it" row at x=45, the paragraph explaining
+   that button at x=88, and it carried NO top margin — 43px of indent nobody chose and 0px of air.
+   Stated once here rather than per element, because the same fault appeared a second time that
+   evening when the suggested questions moved above step 3's hint and the hint became the middle
+   of a control stack. Guarded in test/site.test.js. */
+.row + p.hint { margin: 16px 0; }
 @media (max-width: 620px) { .step > p.hint { margin-left: 0; } .step { padding: 18px; } }
 
 /* ---------- inputs ---------- */

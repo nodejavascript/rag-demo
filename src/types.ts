@@ -144,6 +144,16 @@ export interface IndexStats {
   assumedYear: boolean;
   yearUsed: number | null;
   embeddingMs: number;
+  /**
+   * How long each stage of the index took, in milliseconds — **measured as it ran, never
+   * estimated**, the same way every other figure on this page is.
+   *
+   * 🔴 OPTIONAL ON PURPOSE. A document indexed before this field existed has no timings, and the
+   * chart that draws them hides itself rather than drawing three zeroes: **an empty chart and a
+   * chart whose stages really took no time look the same on screen and mean opposite things.**
+   * That is the same rule the funnel follows when a stage did not run.
+   */
+  stageMs?: { reading: number; embedding: number; saving: number };
 }
 
 /** The details a note carries, gathered for the whole answer. */

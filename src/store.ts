@@ -265,6 +265,24 @@ export class Store {
     }
   }
 
+  /**
+   * Write the stage timings onto a document that has just been stored.
+   *
+   * 🔴 THE RECORD HAS TO EXIST BEFORE IT CAN BE INSERTED, AND THE WRITE'S OWN DURATION CANNOT BE
+   * KNOWN UNTIL IT HAS HAPPENED. So the last stage's timing goes on in a second, single-column
+   * update rather than being guessed before the fact — the same rule the rest of this page
+   * follows: a number is measured or it is not shown. Nothing else about the record changes.
+   */
+  setStageMs(id: string, stageMs: NonNullable<IndexStats['stageMs']>): void {
+    const row = this.db.prepare('SELECT stats_json FROM documents WHERE id = ?').get(id) as
+      | { stats_json: string }
+      | undefined;
+    if (!row) return;
+    const stats = JSON.parse(row.stats_json) as IndexStats;
+    stats.stageMs = stageMs;
+    this.db.prepare('UPDATE documents SET stats_json = ? WHERE id = ?').run(JSON.stringify(stats), id);
+  }
+
   getDocument(id: string): DocumentView | null {
     const row = this.db
       .prepare(
