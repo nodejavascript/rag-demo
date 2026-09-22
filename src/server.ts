@@ -380,7 +380,7 @@ const server = createServer((request, response) => {
         const raw = await readBody(request, BODY_LIMIT);
 
         // 🔴 TWO CEILINGS BEFORE ANY WORK IS DONE, AND BOTH ARE ABOUT THE HOST RATHER THAN THE TEXT.
-        // The store's size: 40 documents an hour of up to 400,000 characters, kept for a day, is more
+        // The store's size: documents of up to 1,000,000 characters, kept for a day, is more
         // than this disk should be asked to hold, so past the budget the demo refuses new work and says
         // when the space comes back. The client's CHARACTERS: an hour used to be counted in documents,
         // which made forty maximum pastes and forty one-line notes the same allowance.

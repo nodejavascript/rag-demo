@@ -19,7 +19,7 @@ import { build } from '../dist/chunk.js';
 import { SAMPLES } from '../dist/samples.js';
 import { Model } from '../dist/model.js';
 import { Store } from '../dist/store.js';
-import { indexDocument } from '../dist/indexer.js';
+import { indexDocument, MAX_CHARS } from '../dist/indexer.js';
 import { answer } from '../dist/answer.js';
 import { retrieve } from '../dist/retrieve.js';
 import { factsFor, factsAsText, subjectTerms, properNouns } from '../dist/stats.js';
@@ -1200,6 +1200,90 @@ test('a refusal says whether the search refused or the model did', async () => {
     assert.equal(bySearch.mode, 'refused');
     assert.equal(bySearch.refusedBy, 'search', 'the search route must be labelled as the search');
     assert.equal(called, 0, 'the search route must not call the model at all');
+  } finally {
+    close();
+  }
+});
+
+/**
+ * 🔴 HALF A MILLION CHARACTERS IS ACCEPTED, BECAUSE SOMEBODY MEASURED IT.
+ *
+ * George hit the old 400,000-character ceiling with a book (`rays-of-wit.pdf`, 508,035 characters) and
+ * asked whether the limit could be raised or the text chunked. The refusal it produced had asserted a
+ * cost nobody had measured — *"an index this size would be slow to search and would crowd out the other
+ * sites on this machine"* — so the cost was measured on this host: **9.6 s to index 681 notes**, a
+ * **110–362 ms** search, **+8.25 MB** of store, and **104 MB** of server memory against a 288 MB cap.
+ * The ceiling was raised to 1,000,000 on that evidence, and this test pins the case that produced it.
+ *
+ * ⚠️ The model is a stub here, so this measures the SPLITTING, the note count and the plumbing — not the
+ * ten seconds, which are the remote embeddings and were measured against the live server.
+ */
+test('half a million characters is accepted, and becomes hundreds of searchable notes', async () => {
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    // Built to the measured size, with a date on every entry so the splitter has real structure.
+    const places = ['Hamilton', 'Burlington', 'Grimsby', 'Dundas'];
+    const lines = [];
+    for (let i = 0; lines.join('\n').length <= 508_035; i += 1) {
+      const day = (i % 28) + 1;
+      const month = ((i / 28) | 0) % 12 + 1;
+      const year = 2024 + ((i / 336) | 0);
+      lines.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+      lines.push(
+        `The crew met in ${places[i % places.length]} at eight and worked through the morning on the ` +
+          'north wall. Nothing unusual to report, and the weather held until the afternoon.'
+      );
+      lines.push('');
+    }
+    // Padded to the exact size rather than sliced to it: a fixture whose length depends on where the
+    // loop happened to stop is a fixture that fails by one character, which it did.
+    let text = lines.join('\n');
+    if (text.length < 508_035) text += ' '.repeat(508_035 - text.length);
+    text = text.slice(0, 508_035);
+    assert.equal(text.length, 508_035, 'the fixture must be the size of the book that found the ceiling');
+
+    const { document } = await indexDocument(store, model, { text });
+    // ⚠️ NOT an exact equality: the indexer normalises the text, and its normaliser trims trailing
+    // whitespace — so the document is a character or two shorter than the fixture (which is why the
+    // first version of this line failed at 508,034). What matters is the SIZE CLASS: this document is
+    // past the old 400,000 ceiling, and the index must keep all of it.
+    assert.ok(
+      document.stats.characters > 508_000,
+      `the whole book must be kept, not truncated — the document holds ${document.stats.characters} characters`
+    );
+    assert.ok(
+      document.stats.chunks >= 400,
+      `the book case must split into hundreds of notes, not a handful — it made ${document.stats.chunks}`
+    );
+    assert.ok(
+      document.stats.entries >= 400,
+      `and into hundreds of entries — it made ${document.stats.entries}`
+    );
+    // And the store really holds them: a document that indexes but stores nothing is the worse fault.
+    assert.equal(store.chunkCount(document.id), document.stats.chunks);
+  } finally {
+    close();
+  }
+});
+
+test('past the ceiling it still refuses, and the refusal no longer asserts an unmeasured cost', async () => {
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    const tooBig = 'x'.repeat(MAX_CHARS + 1);
+    await assert.rejects(
+      () => indexDocument(store, model, { text: tooBig }),
+      (error) => {
+        assert.match(error.message, /over the 1,000,000 limit/, 'the refusal must name the real ceiling');
+        assert.ok(
+          !/crowd out the other sites|slow to search/.test(error.message),
+          'the refusal is claiming a cost that was measured and disproved'
+        );
+        assert.match(error.message, /MAX_DOCUMENT_CHARS/, 'and it must say the ceiling is a setting, not a law');
+        return true;
+      }
+    );
   } finally {
     close();
   }

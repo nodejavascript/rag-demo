@@ -29,7 +29,10 @@ services:
       DOC_TTL_HOURS: "${DOC_TTL_HOURS:-24}"
       # Hard ceiling on a paste, in characters. Beyond this the index is slow to
       # search and crowds the memory the other sites on this host need.
-      MAX_DOCUMENT_CHARS: "${MAX_DOCUMENT_CHARS:-400000}"
+      # Raised from 400000 on 22 Sep 2026 ON A MEASUREMENT: a 508,035-character book
+      # (rays-of-wit.pdf, 681 notes) indexed here in 9.6 s, grew the store by 8.25 MB, answered in
+      # 110-362 ms, and held the server at 104 MB. 1,000,000 is about twice that case.
+      MAX_DOCUMENT_CHARS: "${MAX_DOCUMENT_CHARS:-1000000}"
       # Two pastes may be embedded at once; the rest wait rather than thrash.
       MAX_CONCURRENT_INDEX: "${MAX_CONCURRENT_INDEX:-2}"
       INDEX_PER_HOUR: "${INDEX_PER_HOUR:-40}"
@@ -41,7 +44,9 @@ services:
       MAX_CONCURRENT_ASK: "${MAX_CONCURRENT_ASK:-3}"
       # An hour used to be counted in DOCUMENTS, which made forty maximum pastes and forty
       # one-line notes the same allowance. This counts the thing that actually costs.
-      INDEX_CHARS_PER_HOUR: "${INDEX_CHARS_PER_HOUR:-600000}"
+      # Two maximum-size documents an hour — this must move with the ceiling above, or a
+      # reader is told their document is fine and then stopped by a net they cannot see.
+      INDEX_CHARS_PER_HOUR: "${INDEX_CHARS_PER_HOUR:-2000000}"
       # Ceiling on the store itself. Past it the demo refuses new work and says when the
       # space comes back, rather than filling a disk shared with nine other sites.
       MAX_STORE_MB: "${MAX_STORE_MB:-150}"

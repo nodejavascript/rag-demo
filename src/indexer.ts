@@ -22,7 +22,30 @@ import type { Model } from './model.js';
 
 /** Shortest paste worth indexing, and the longest one accepted. */
 export const MIN_CHARS = 200;
-export const MAX_CHARS = Number.parseInt(process.env.MAX_DOCUMENT_CHARS ?? '400000', 10);
+/**
+ * The longest document accepted, raised on 22 Sep 2026 from 400,000 to 1,000,000 — WITH A MEASUREMENT.
+ *
+ * 🔴 THE OLD CEILING ASSERTED A COST THAT NOBODY HAD MEASURED, AND THE MEASUREMENT DOES NOT SUPPORT IT.
+ * Its refusal said *"an index this size would be slow to search and would crowd out the other sites on
+ * this machine"*. George hit it with a book — `rays-of-wit.pdf`, **508,035 characters** — and asked
+ * whether the limit could be raised or the text chunked, so the cost was measured on this host:
+ *
+ *   · **indexing: 9.6 seconds** for 681 notes (reading 2.4 s, embedding 7.1 s, saving 0.04 s);
+ *   · **search: 110–362 ms** for that document, because the search is a scan over its own vectors;
+ *   · **the store grew by 8.25 MB** — 2.58 MB to 10.83 MB — against a 150 MB budget;
+ *   · **the server's memory: 104 MB**, inside a 288 MB container cap and a 192 MB heap limit;
+ *   · no warnings, and every note carried a date.
+ *
+ * So half a million characters is about ten seconds of work and ten megabytes of disk. 1,000,000 is set
+ * as roughly twice the measured case — about twenty seconds and twenty megabytes, still comfortable —
+ * and the nets that actually protect the host are the ones that bound the aggregate rather than one
+ * paste: `INDEX_CHARS_PER_HOUR`, `MAX_STORE_MB`, `MAX_CONCURRENT_INDEX` and the 24-hour TTL.
+ *
+ * ⚠️ IT IS STILL A CEILING, AND THE REAL PROTECTION IS THE AGGREGATE. This number bounds ONE document;
+ * the hourly character budget bounds a client, and the store budget bounds the machine. An operator can
+ * raise this without a release by setting `MAX_DOCUMENT_CHARS`.
+ */
+export const MAX_CHARS = Number.parseInt(process.env.MAX_DOCUMENT_CHARS ?? '1000000', 10);
 
 /** How long an anonymous paste is kept before it is swept away. */
 export const DEFAULT_TTL_HOURS = Number.parseFloat(process.env.DOC_TTL_HOURS ?? '24');
@@ -100,8 +123,11 @@ export async function indexDocument(
   if (prepared.text.length > MAX_CHARS) {
     throw new AppError(
       `That is ${prepared.text.length.toLocaleString()} characters, over the ${MAX_CHARS.toLocaleString()} ` +
-        `limit. Split it and ask about one part at a time — an index this size would be slow to search and ` +
-        `would crowd out the other sites on this machine.`,
+        `limit. Split it and index one part at a time — this one is ${(
+          prepared.text.length / MAX_CHARS
+        ).toFixed(1)}× the ceiling. ` +
+        `(For scale, a measured 508,035-character book indexes here in about ten seconds and ten ` +
+        `megabytes, so the ceiling is generous; an operator can raise it with MAX_DOCUMENT_CHARS.)`,
       413
     );
   }

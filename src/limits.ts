@@ -5,7 +5,7 @@
  * **288 MB** memory cap. Everything in this file is one of the ways a public demo like this one fails —
  * and the list of what was already guarded is as important as the list of what was not:
  *
- *   · **a paste is bounded** — `MIN_CHARS` 200 to `MAX_CHARS` 400,000 (`indexer.ts`), and the request
+ *   · **a paste is bounded** — `MIN_CHARS` 200 to `MAX_CHARS` 1,000,000 (`indexer.ts`), and the request
  *     body is capped at `BODY_LIMIT` 900,000 characters and a PDF upload at `FILE_LIMIT` 12 MB;
  *   · **indexing is bounded twice** — `MAX_CONCURRENT_INDEX` documents may embed at once and each
  *     client may start `INDEX_PER_HOUR` in an hour;
@@ -19,7 +19,7 @@
  *     measured **7–17 seconds** on a 12,350-character resume against 2–5 seconds for a search question.
  *     Six people clicking at once would hold six long model calls, six sockets and six response buffers
  *     on the same small box. `MAX_CONCURRENT_ASK` is that cap.
- *   ✗ **the STORE had no ceiling.** 40 documents an hour of up to 400,000 characters each, kept for 24
+ *   ✗ **the STORE had no ceiling.** Documents of up to 1,000,000 characters each, kept for 24
  *     hours, is a lot of text and a lot of vectors for a 24 GB disk shared with everything else.
  *     `MAX_STORE_MB` refuses new work once the database is past a budget, and says when the space comes
  *     back.
@@ -51,8 +51,16 @@ function envInt(name: string, fallback: number): number {
  */
 export const MAX_CONCURRENT_ASK = envInt('MAX_CONCURRENT_ASK', 3);
 
-/** How many characters one client may index in an hour. 600,000 is one and a half maximum pastes. */
-export const INDEX_CHARS_PER_HOUR = envInt('INDEX_CHARS_PER_HOUR', 600_000);
+/**
+ * How many characters one client may index in an hour — **two maximum-size documents.**
+ *
+ * ⚠️ THIS IS TIED TO `MAX_DOCUMENT_CHARS` AND MUST MOVE WITH IT. The document ceiling was raised to
+ * 1,000,000 on 22 Sep 2026 on a measurement (see `indexer.ts`), and at the old 600,000 this budget
+ * would have refused a SECOND book in the same hour while the ceiling said the first was fine — a
+ * reader would have been told their document was acceptable and then stopped by a net they cannot see.
+ * Two maximum documents an hour is the honest shape of "a person trying this out".
+ */
+export const INDEX_CHARS_PER_HOUR = envInt('INDEX_CHARS_PER_HOUR', 2_000_000);
 
 /**
  * How large the store may grow before indexing is refused, in megabytes of database file.

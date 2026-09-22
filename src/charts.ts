@@ -299,7 +299,7 @@ export interface SpineEntry {
  * trusting the wording.
  *
  * 🔴 **A LONG DOCUMENT IS DRAWN BY MONTH, NOT BY ENTRY, AND SAYS SO.** One cell per entry
- * is the honest picture, but a 400,000-character document can hold thousands of entries and
+ * is the honest picture, but a 1,000,000-character document can hold thousands of entries and
  * a chart with four thousand cells in it is a smear. Past the limit the cells become
  * **consecutive runs of the document** — a month each where there is a month, and the
  * undated run where there is not — so no entry is dropped and the totals still add up.
