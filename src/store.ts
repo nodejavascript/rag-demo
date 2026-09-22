@@ -15,7 +15,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { mentionGrid, type MentionMonths } from './charts.js';
 import { AppError } from './types.js';
@@ -52,8 +52,11 @@ export interface StoredChunk extends Chunk {
 
 export class Store {
   readonly db: DatabaseSync;
+  /** Where the database lives — needed to weigh it, which is how the size ceiling is enforced. */
+  readonly path: string;
 
   constructor(path: string) {
+    this.path = path;
     // SQLite will not create the directory, and a first run on a fresh machine has
     // no `data/` yet — so make it here rather than making it somebody's setup step.
     if (path !== ':memory:') {
@@ -429,7 +432,35 @@ export class Store {
   housekeeping(): { documents: number; chunks: number } {
     const docs = this.db.prepare('SELECT COUNT(*) AS n FROM documents').get() as { n: number };
     const chunks = this.db.prepare('SELECT COUNT(*) AS n FROM chunks').get() as { n: number };
+    // 🔴 THE WRITE-AHEAD LOG IS CHECKPOINTED HERE, and this is the only place it happens on a timer.
+    // In WAL mode SQLite appends every write to `-wal` and folds it back into the database when it
+    // feels like it — so on a store that is written and rarely read the log can grow to the size of
+    // the database beside it. TRUNCATE folds it in and gives the space back, and it is cheap on an
+    // idle store. Failure is not fatal: a checkpoint is housekeeping, not the work.
+    try {
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch {
+      /* a busy store refuses the checkpoint; the next sweep will fold it in */
+    }
     return { documents: docs.n, chunks: chunks.n };
+  }
+
+  /**
+   * What this database weighs on disk, log included.
+   *
+   * The log is counted because it is part of what the disk has to hold, and a store that reports only
+   * its main file would under-report itself by the amount a busy hour wrote and never folded in.
+   */
+  dbBytes(): number {
+    let total = 0;
+    for (const file of [this.path, `${this.path}-wal`, `${this.path}-shm`]) {
+      try {
+        total += statSync(file).size;
+      } catch {
+        /* a file that is not there weighs nothing */
+      }
+    }
+    return total;
   }
 
   /**

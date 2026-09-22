@@ -34,6 +34,22 @@ services:
       MAX_CONCURRENT_INDEX: "${MAX_CONCURRENT_INDEX:-2}"
       INDEX_PER_HOUR: "${INDEX_PER_HOUR:-40}"
       ASK_PER_HOUR: "${ASK_PER_HOUR:-240}"
+      # 🔴 THE NETS THAT A PUBLIC AFTERNOON NEEDS, all justified in `src/limits.ts`.
+      # An ANSWER is a remote model call of 2–20 seconds, and a question asking for a list
+      # now reads the whole document; without a cap, every simultaneous clicker held a long
+      # call and a socket on a box that has ~314 MB free. The caller over the line is told.
+      MAX_CONCURRENT_ASK: "${MAX_CONCURRENT_ASK:-3}"
+      # An hour used to be counted in DOCUMENTS, which made forty maximum pastes and forty
+      # one-line notes the same allowance. This counts the thing that actually costs.
+      INDEX_CHARS_PER_HOUR: "${INDEX_CHARS_PER_HOUR:-600000}"
+      # Ceiling on the store itself. Past it the demo refuses new work and says when the
+      # space comes back, rather than filling a disk shared with nine other sites.
+      MAX_STORE_MB: "${MAX_STORE_MB:-150}"
+      # 🔴 NODE'S OWN HEAP, INSIDE ITS OWN CONTAINER. Without a ceiling a large paste makes
+      # Node grow until the cgroup kills it and the container restarts mid-index; with one,
+      # it collects hard instead. 192 MB inside a 288 MB cap leaves room for the rest of
+      # the process (the SQLite pages, the buffers, the parser) without asking for more.
+      NODE_OPTIONS: "--max-old-space-size=192"
       # --- the model -------------------------------------------------------
       # `ollama`   → a model on the same machine. No key, no vendor.
       # `openai`   → anything speaking the OpenAI shape, including DigitalOcean

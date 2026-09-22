@@ -25,6 +25,16 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { answer, type AnswerOptions } from './answer.js';
 import { indexDocument, MAX_CHARS, MIN_CHARS, DEFAULT_TTL_HOURS } from './indexer.js';
+import {
+  INDEX_CHARS_PER_HOUR,
+  MAX_CONCURRENT_ASK,
+  MAX_STORE_MB,
+  mb,
+  minutesUntil,
+  storeIsFull,
+  takeChars,
+  type CharBudget,
+} from './limits.js';
 import { modelConfig, Model } from './model.js';
 import { DEFAULT_RETRIEVE } from './retrieve.js';
 import { Store } from './store.js';
@@ -114,6 +124,17 @@ const model = new Model(modelConfig());
 
 /** How many pastes are being embedded right now. */
 let indexing = 0;
+
+/** How many answers are being written right now — see `MAX_CONCURRENT_ASK` in `limits.ts`. */
+let answering = 0;
+
+/**
+ * What each client has spent of its hourly CHARACTER allowance, which is the resource indexing costs.
+ *
+ * Kept in memory on purpose: this is one container, the counters are a courtesy to the host, and a
+ * restart clearing them costs nothing worse than one extra paste being allowed.
+ */
+const charBudgets = new Map<string, CharBudget>();
 
 /** A small fixed-window limiter — enough to stop a script, kind to a reader. */
 interface Window {
@@ -266,6 +287,15 @@ const server = createServer((request, response) => {
           embedModel: model.config.embedModel,
           rerank: model.rerankAvailable ? model.config.rerankModel : null,
           housekeeping: store.housekeeping(),
+          // 🔴 THE NUMBERS A HOST WATCHER NEEDS, ON THE ENDPOINT THAT IS ALREADY POLLED. `dbMb` against
+          // `maxStoreMb` and `answering` against `maxAsking` are the two ceilings in `limits.ts`, so an
+          // operator can see how close the box is to refusing work without opening the database.
+          storeMb: Number((store.dbBytes() / 1024 / 1024).toFixed(2)),
+          maxStoreMb: MAX_STORE_MB,
+          answering,
+          maxAsking: MAX_CONCURRENT_ASK,
+          indexing,
+          ttlHours: DEFAULT_TTL_HOURS,
         });
         return;
       }
@@ -320,6 +350,12 @@ const server = createServer((request, response) => {
           maxCharacters: MAX_CHARS,
           ttlHours: DEFAULT_TTL_HOURS,
           refusalFloor: DEFAULT_RETRIEVE.refusalFloor,
+          // The nets added after the first deployment, reported here so the page and any operator can
+          // read them without opening the compose file.
+          maxConcurrentAsk: MAX_CONCURRENT_ASK,
+          indexCharsPerHour: INDEX_CHARS_PER_HOUR,
+          maxStoreMb: MAX_STORE_MB,
+          storeMb: Number((store.dbBytes() / 1024 / 1024).toFixed(2)),
         });
         return;
       }
@@ -342,6 +378,34 @@ const server = createServer((request, response) => {
           return;
         }
         const raw = await readBody(request, BODY_LIMIT);
+
+        // 🔴 TWO CEILINGS BEFORE ANY WORK IS DONE, AND BOTH ARE ABOUT THE HOST RATHER THAN THE TEXT.
+        // The store's size: 40 documents an hour of up to 400,000 characters, kept for a day, is more
+        // than this disk should be asked to hold, so past the budget the demo refuses new work and says
+        // when the space comes back. The client's CHARACTERS: an hour used to be counted in documents,
+        // which made forty maximum pastes and forty one-line notes the same allowance.
+        const dbBytes = store.dbBytes();
+        if (storeIsFull(dbBytes)) {
+          sendJson(response, 503, {
+            error:
+              `This demo is full: the store is ${mb(dbBytes)} of its ${MAX_STORE_MB} MB and documents are ` +
+              `held for ${DEFAULT_TTL_HOURS} hours. Try again once some of them expire.`,
+          });
+          return;
+        }
+        const body = JSON.parse(raw || '{}') as { text?: string };
+        const spent = takeChars(charBudgets.get(client), (body.text ?? '').length, Date.now());
+        if (!spent.allowed) {
+          response.setHeader('retry-after', String(Math.ceil(spent.retryInMs / 1000)));
+          sendJson(response, 429, {
+            error:
+              `That is ${(INDEX_CHARS_PER_HOUR / 1000).toLocaleString()} thousand characters of pasting ` +
+              `from one address in an hour, and this one is spent. It frees up in about ` +
+              `${minutesUntil(spent.retryInMs)} minutes.`,
+          });
+          return;
+        }
+        charBudgets.set(client, spent.budget);
         const payload = JSON.parse(raw || '{}') as {
           text?: string;
           title?: string;
@@ -427,6 +491,22 @@ const server = createServer((request, response) => {
           sendJson(response, 400, { error: 'Which document? No document id was sent.' });
           return;
         }
+        // 🔴 THE CAP THAT DID NOT EXIST, AND THE ONE THE WHOLE-DOCUMENT PATH MADE NECESSARY. Indexing
+        // has had `MAX_CONCURRENT_INDEX` since it was written; asking had only an hourly count. A
+        // question that asks for a list now reads the whole document — measured at 7–17 seconds on a
+        // 12,350-character resume against 2–5 seconds for a search question — so a handful of people
+        // clicking at once would hold a handful of long model calls, sockets and response buffers on a
+        // host with 314 MB free. The caller who is over the line is told so, in the time it takes to
+        // read the sentence, rather than queued behind a wait nobody can see.
+        if (answering >= MAX_CONCURRENT_ASK) {
+          response.setHeader('retry-after', '5');
+          sendJson(response, 503, {
+            error:
+              `The machine is already answering ${answering} questions at once, which is its limit. ` +
+              'Try again in a few seconds.',
+          });
+          return;
+        }
         if (streaming) {
           response.writeHead(200, {
             'content-type': 'application/x-ndjson; charset=utf-8',
@@ -438,6 +518,9 @@ const server = createServer((request, response) => {
           if (streaming) response.write(`${JSON.stringify(line)}\n`);
         };
         const started = Date.now();
+        // Counted here and released in the `finally`, so every way out of the call — a refusal, a
+        // provider error, a thrown exception, a closed socket — gives the slot back.
+        answering += 1;
         try {
           const result = await answer(store, model, payload.docId, (payload.question ?? '').trim(), {
             retrieve: DEFAULT_RETRIEVE,
@@ -459,6 +542,8 @@ const server = createServer((request, response) => {
             return;
           }
           throw error;
+        } finally {
+          answering -= 1;
         }
         return;
       }
@@ -507,6 +592,10 @@ function sweep(): void {
   try {
     const gone = store.purgeExpired();
     if (gone > 0) console.log(`swept ${gone} expired document(s)`);
+    // The same timer folds the write-ahead log back into the database — see `housekeeping()`. It is
+    // housekeeping on a clock rather than on demand, because a demo is written to and rarely read, and
+    // that is exactly the shape of store where a log grows unattended.
+    store.housekeeping();
   } catch (error) {
     console.error('sweep failed:', error instanceof Error ? error.message : error);
   }
