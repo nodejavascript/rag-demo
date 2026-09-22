@@ -16,7 +16,8 @@
 import { tally } from './enrich.js';
 import { buildFunnel, buildSpine, type Spine } from './charts.js';
 import { buildMessages, isNothingFurther, isRefusal, readShape } from './prompt.js';
-import { retrieve, type RetrieveOptions } from './retrieve.js';
+import { retrieve, retrieveEverything, type RetrieveOptions } from './retrieve.js';
+import { wantsEverything } from './scope.js';
 import { factsFor } from './stats.js';
 import { analyseGaps } from './gaps.js';
 import { analyseConflicts } from './conflicts.js';
@@ -174,7 +175,15 @@ export async function answer(
 
   const report = (stage: AnswerStage): void => options.onStage?.(stage);
 
-  const retrieval = await retrieve(store, model, docId, question, options.retrieve);
+  // 🔴 THE SHAPE OF THE QUESTION DECIDES THE SEARCH, BEFORE THE SEARCH RUNS. A question that asks for
+  // a list is answered from EVERY note, in the document's own order; anything else keeps the
+  // similarity search it has always had. The distinction exists because *"Which employers and job
+  // titles are named?"* — a question this page offers — came back with four employers out of twelve
+  // when it was answered from the eight best-matching notes. `scope.ts` holds the whole story.
+  const whole = wantsEverything(question);
+  const retrieval = whole
+    ? await retrieveEverything(store, model, docId, question, options.retrieve)
+    : await retrieve(store, model, docId, question, options.retrieve);
   const warnings = [...retrieval.warnings];
   report({
     stage: 'search',
@@ -265,6 +274,9 @@ export async function answer(
     facts: computed,
     stats: document.stats,
     assumedYear: document.stats.assumedYear,
+    // Only ever set on the whole-document path: the matching path hands over the best few notes BY
+    // DESIGN, and saying "this is all of it" there would be a lie the model could repeat.
+    coverage: whole ? { shown: retrieval.scored.length, total: retrieval.ranked } : undefined,
   });
 
   // 🔴 SENT BEFORE THE CALL, NOT AFTER. `tookMs` is deliberately absent: this stage has not

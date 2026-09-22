@@ -47,8 +47,15 @@ const GENERAL = [
  *
  * A question the document cannot answer is not a mistake — it is the refusal path being
  * shown, which is half of what this tool is for. None of them asks for a count or a total.
+ *
+ * 🔴 **EXPORTED SO EVERY QUESTION CAN BE CLASSIFIED, AND THE CLASSIFICATION TESTED.** `scope.ts`
+ * keeps the registries that say which of these ask for a LIST — the questions that must be answered
+ * from the whole document rather than from the best-matching eight notes, after *"Which employers and
+ * job titles are named?"* answered with four employers out of twelve. `test/scope.test.js` walks this
+ * record and fails if any question here is in neither registry, so a new suggested question cannot
+ * arrive unclassified.
  */
-const BY_KIND: Record<DocumentKind, string[]> = {
+export const BY_KIND: Record<DocumentKind, string[]> = {
   resume: [
     'What skills are listed?',
     'Where has this person worked?',

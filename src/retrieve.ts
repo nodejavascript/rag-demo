@@ -42,6 +42,16 @@ export const DEFAULT_RETRIEVE: RetrieveOptions = {
   useRerank: process.env.RERANK_MODEL !== '',
 };
 
+/**
+ * How much of a document may be handed to the model when the question asks for a list.
+ *
+ * Characters, not notes, because that is what the model's window is measured in: the answer call
+ * runs at `numCtx: 8192` and leaves 700 tokens for the reply, so 18,000 characters of notes (about
+ * 4,500 tokens) leaves room for the rules and the facts. A document longer than this gets its first
+ * notes in document order and is TOLD it is reading part of the document — see the warning below.
+ */
+export const WHOLE_BUDGET_CHARS = Number.parseInt(process.env.WHOLE_BUDGET_CHARS ?? '18000', 10);
+
 export interface RetrieveResult {
   question: string;
   scored: Scored[];
@@ -221,4 +231,98 @@ export async function retrieve(
   }
 
   return { question, scored, bestVector, silent: false, warnings, retrieveMs, rerankMs, ranked: ranked.length, reranked: rerankScores ? candidates.length : undefined };
+}
+
+/**
+ * Retrieve by STRUCTURE instead of by similarity: every note, in the document's own order.
+ *
+ * 🔴 **THIS IS THE FIX FOR *"Which employers and job titles are named?"* ANSWERING WITH FOUR**
+ * **EMPLOYERS OUT OF TWELVE** — the whole story is in `scope.ts`. The short version: similarity
+ * search cannot answer a question about a set, because the answer is not the notes that match the
+ * words, it is every note that holds one of the things asked for. The eight best-matching notes of a
+ * 20-note resume held four employer names; the other nine were never shown to the model.
+ *
+ * What this function does NOT do, and must not:
+ *   · it does not score anything differently — the cosine for every note is still measured and still
+ *     drawn, so the "how well each note matched" chart stays honest and still shows that a list
+ *     question matches its own document only weakly;
+ *   · it does not count anything — the facts section is unchanged, and the model is still forbidden
+ *     to add up;
+ *   · it does not hide the difference. The warning says the whole document was read, or says exactly
+ *     how much of it was, and the prompt tells the model the same thing in the same words.
+ *
+ * A document bigger than `WHOLE_BUDGET_CHARS` is read from the top, in order, and the warning and
+ * the prompt both say how many of how many notes were used — because a partial list presented as a
+ * complete one is the exact failure this whole path exists to end.
+ */
+export async function retrieveEverything(
+  store: Store,
+  model: Model,
+  docId: string,
+  question: string,
+  options: RetrieveOptions = DEFAULT_RETRIEVE
+): Promise<RetrieveResult> {
+  const started = Date.now();
+
+  // One embedding call, then a dot product against every note the document holds.
+  const [query] = await model.embed([question]);
+  if (!query) throw new AppError('The embedding model returned nothing for the question.', 503);
+  const rows = store.vector(docId, query);
+  const cosine = new Map(rows.map((row) => [row.chunkId, row.score]));
+  const all = store.allChunks(docId);
+
+  const kept: StoredChunk[] = [];
+  let chars = 0;
+  for (const chunk of all) {
+    // At least one note is always kept, even when it alone is larger than the budget: an empty
+    // context is a refusal, and refusing a question the page itself offered would be worse than a
+    // short answer. The prompt is told the coverage either way.
+    if (kept.length > 0 && chars + chunk.text.length > WHOLE_BUDGET_CHARS) break;
+    kept.push(chunk);
+    chars += chunk.text.length;
+  }
+
+  const scored: Scored[] = kept.map((chunk) => ({
+    chunk,
+    vector: cosine.get(chunk.id) ?? 0,
+    lexical: 0,
+    vectorRank: 0,
+    lexicalRank: 0,
+    fused: 0,
+    both: false,
+    rerank: null,
+  }));
+
+  const bestVector = rows.reduce((best, row) => Math.max(best, row.score), 0);
+  const retrieveMs = Date.now() - started;
+
+  // 🔴 A LIST QUESTION IS NOT REFUSED ON SIMILARITY, AND THAT IS A MEASURED DECISION.
+  //
+  // The first version of this function kept the matching path's refusal rule — nothing found by word
+  // AND the best cosine below the floor — and `tools/judge-answers.mjs` immediately showed what that
+  // costs. On a statement of accounts written for the tool, THREE of the four questions the page
+  // itself offers were refused in 0.2 s with *"Nothing in this document matched the question closely
+  // enough"*: **"Which payees or merchants are named?", "What amounts are listed?" and "What date
+  // range does it cover?"** — on a document that lists eight payees, thirteen amounts and both ends
+  // of a date range. The word *payee* is not in the document, the word *merchant* is not in it, and
+  // a note the length of the whole statement dilutes its own cosine, so the search said "silent"
+  // about a question the page had offered the reader.
+  //
+  // It is the same mistake as the one this path was built to fix, one layer down: **the search is
+  // the wrong instrument for a question about what the document NAMES.** So on this path the
+  // document is read, and the only thing that counts as silence is having nothing to read. The
+  // prompt's own refusal rule does the rest — if the document really does not name any of them, the
+  // model says so in one line, having actually looked.
+  const silent = all.length === 0;
+
+  const warnings = [
+    kept.length === all.length
+      ? `Your question asks for a list, so all ${all.length} notes of the document were read, in its own order — not the ${FINAL_NOTES} that matched best. A list answered from the best matches is a list with holes in it.`
+      : `Your question asks for a list, and this document is longer than one model call can hold: the first ${kept.length} of its ${all.length} notes were read, in document order. The answer was told to say that the list may be incomplete.`,
+  ];
+
+  if (silent) {
+    return { question, scored: [], bestVector, silent: true, warnings, retrieveMs, rerankMs: 0, ranked: all.length, reranked: undefined };
+  }
+  return { question, scored, bestVector, silent: false, warnings, retrieveMs, rerankMs: 0, ranked: all.length, reranked: undefined };
 }

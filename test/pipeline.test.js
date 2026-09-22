@@ -23,7 +23,7 @@ import { indexDocument } from '../dist/indexer.js';
 import { answer } from '../dist/answer.js';
 import { retrieve } from '../dist/retrieve.js';
 import { factsFor, factsAsText, subjectTerms, properNouns } from '../dist/stats.js';
-import { isNothingFurther, isRefusal, readShape } from '../dist/prompt.js';
+import { buildMessages, isNothingFurther, isRefusal, readShape } from '../dist/prompt.js';
 
 /* ---------------------------------------------------------------- stub model */
 
@@ -382,6 +382,200 @@ test('a question naming a day of the month finds THAT day, not a neighbour', asy
   } finally {
     close();
   }
+});
+
+test('a question that asks for a LIST is answered from every note, not the best eight', async () => {
+  // 🔴 THE MEASURED FAILURE THIS HOLDS SHUT. *"Which employers and job titles are named?"* is a
+  // question the page offers on a resume, and it came back with **four employers out of twelve** —
+  // because the order of the day was the eight best-matching notes, and a similarity search has
+  // almost nothing to match on when every employment block reads *"IOU Concepts / Hamilton, Ontario
+  // / 02/2017 - 05/2022"*. The model was faithful to the notes it was given; the search starved it.
+  //
+  // 🔴 THE DIARY IS THE DOCUMENT HERE BECAUSE IT HAS **NINE** NOTES AND THE SEARCH SHOWS EIGHT. The
+  // sample resume has exactly eight, which is also the number the search returns — so on the resume
+  // this assertion would hold whether the fix was in place or not. Chosen to discriminate.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    const model = stubModel();
+    model.chat = async (messages) => {
+      seen.push(messages);
+      return 'WHAT THE DOCUMENT SAYS\nThe events are in one place.\n\nWHAT IT SUGGESTS\nNothing further.';
+    };
+    const { document } = await indexDocument(store, model, { text: diary });
+    const total = store.chunkCount(document.id);
+    assert.ok(total > 8, `this test needs a document with more notes than the search shows (it has ${total})`);
+
+    const reply = await answer(store, model, document.id, 'Where do the events take place?', {
+      retrieve: { refusalFloor: 0, useRerank: false },
+    });
+
+    assert.equal(reply.sources.length, total, 'the list question did not get every note');
+    assert.equal(seen.length, 1, 'the model must be called exactly once');
+    const prompt = seen[0].map((message) => message.content).join('\n');
+    assert.equal(
+      (prompt.match(/--- NOTE /g) ?? []).length,
+      total,
+      'the prompt does not quote every note, whatever the sources say'
+    );
+    assert.match(prompt, /EVERY note in the document is quoted below/, 'the model is not told it has the whole document');
+    assert.match(String(reply.warnings), /all \d+ notes of the document were read/, 'the reader is not told the whole document was read');
+
+    // In the document's own order, so the model reads the document top to bottom rather than by
+    // score — and so the answer can be followed against the page.
+    const first = store.allChunks(document.id)[0];
+    assert.equal(reply.sources[0].text, first.text, 'the notes are not in document order');
+  } finally {
+    close();
+  }
+});
+
+test('and every employer in a resume reaches the model, which is what the list question needs', async () => {
+  // The completeness half of the same fix, on the document shape George actually hit. The sample
+  // resume names three employers; the assertion is that all three are IN THE PROMPT, because the
+  // old path could hand over a handful of employment blocks and leave the rest behind. What the
+  // MODEL then writes is not asserted — that is not deterministic — but this program's job is to
+  // show it everything it is asked about, and that is asserted here.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    const model = stubModel();
+    model.chat = async (messages) => {
+      seen.push(messages);
+      return 'WHAT THE DOCUMENT SAYS\nThree employers are named.\n\nWHAT IT SUGGESTS\nNothing further.';
+    };
+    const { document } = await indexDocument(store, model, { text: resume });
+    const reply = await answer(store, model, document.id, 'Which employers and job titles are named?', {
+      retrieve: { refusalFloor: 0, useRerank: false },
+    });
+    const prompt = seen[0].map((message) => message.content).join('\n');
+    for (const name of ['First Canadian Title', 'Utherverse Digital', 'IOU Concepts']) {
+      assert.match(prompt, new RegExp(name), `${name} is in the document but was not handed to the model`);
+    }
+    assert.match(prompt, /EVERY note in the document is quoted below/, 'the resume list question was not given the whole document');
+    assert.equal(reply.sources.length, store.chunkCount(document.id), 'and the reader is not shown all of the notes it rested on');
+  } finally {
+    close();
+  }
+});
+
+test('and an ordinary question still reads the best few — the list path is not the default', async () => {
+  // The other half of the fix, and the one that protects the wait: reading every note of a long
+  // document costs tokens and seconds, so it must happen for the questions that need it and for no
+  // others.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    const model = stubModel();
+    model.chat = async (messages) => {
+      seen.push(messages);
+      return 'WHAT THE DOCUMENT SAYS\nIt rained.\n\nWHAT IT SUGGESTS\nNothing further.';
+    };
+    const { document } = await indexDocument(store, model, { text: diary });
+    const total = store.chunkCount(document.id);
+    assert.ok(total > 8, `this test only means something if the document has more notes than the search shows (${total})`);
+
+    const reply = await answer(store, model, document.id, 'What happened on 6 March 2026?', {
+      retrieve: { refusalFloor: 0, useRerank: false },
+    });
+
+    assert.ok(reply.sources.length <= 8, `an ordinary question was handed ${reply.sources.length} notes`);
+    assert.ok(reply.sources.length < total, 'an ordinary question read the whole document');
+    const prompt = seen[0].map((message) => message.content).join('\n');
+    assert.doesNotMatch(prompt, /EVERY note in the document is quoted below/, 'an ordinary question was told it had everything');
+    assert.doesNotMatch(String(reply.warnings), /asks for a list/, 'an ordinary question was answered down the list path');
+  } finally {
+    close();
+  }
+});
+
+test('a list question is not refused because the document uses different words', async () => {
+  // 🔴 MEASURED ON A STATEMENT OF ACCOUNTS, 22 Sep 2026, BY `tools/judge-answers.mjs`: THREE of the
+  // four questions the page offers on a statement were refused in 0.2 s — *"Which payees or merchants
+  // are named?", "What amounts are listed?"* and *"What date range does it cover?"* — on a document
+  // that names eight payees and thirteen amounts. The words *payee* and *merchant* are not in it, and
+  // a note the length of a whole statement dilutes its own cosine, so the search called the document
+  // silent about a question the page itself had offered.
+  //
+  // The floor here is raised to 0.99 on purpose: it means "refuse unless the question is almost the
+  // same text as the note", which is the strongest possible pressure to refuse. The list path must
+  // ignore it — the only silence it recognises is having nothing to read.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    const model = stubModel();
+    model.chat = async (messages) => {
+      seen.push(messages);
+      return 'WHAT THE DOCUMENT SAYS\nThe payees are named in the statement.\n\nWHAT IT SUGGESTS\nNothing further.';
+    };
+    const ledger = [
+      'STATEMENT OF ACCOUNTS - 1 January 2026 to 31 March 2026',
+      '03/01/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+      '07/01/2026 DEBIT Hydro One $184.20',
+      '11/01/2026 DEBIT Freshmart Groceries $236.77',
+      '15/01/2026 DEBIT Rogers Wireless $96.35',
+      '22/01/2026 DEBIT Halton Property Tax $512.00',
+      '19/03/2026 DEBIT Birchwood Dental $340.00',
+    ].join('\n');
+    const { document } = await indexDocument(store, model, { text: ledger });
+    const reply = await answer(store, model, document.id, 'Which payees or merchants are named?', {
+      retrieve: { refusalFloor: 0.99, useRerank: false },
+    });
+    assert.notEqual(reply.mode, 'refused', 'a list question was refused on similarity alone');
+    assert.equal(seen.length, 1, 'the model was not asked, so the document was never read');
+    assert.equal(reply.sources.length, store.chunkCount(document.id), 'the notes were not all handed over');
+  } finally {
+    close();
+  }
+});
+
+test('the shape of the document reaches the model, instead of being thrown away', () => {
+  // 🔴 DEAD CODE FOUND BY A TEST WRITTEN FOR SOMETHING ELSE, 22 Sep 2026. `buildMessages` filled a
+  // `shape` array — the entry count, the note count, whether the document carries dates, the year
+  // the reader supplied, an ambiguous-date warning, and (new) how much of the document is quoted —
+  // and then returned a prompt that contained none of it. The line that reports the whole-document
+  // coverage went in there and arrived nowhere.
+  const messages = buildMessages({
+    question: 'What is this document about?',
+    notes: [{ label: '4 March 2026', date: '2026-03-04', dateRaw: '4 March 2026', text: 'Cold.', places: [], people: [] }],
+    facts: [],
+    stats: {
+      characters: 5,
+      words: 1,
+      entries: 1,
+      datedEntries: 1,
+      firstDate: '2026-03-04',
+      lastDate: '2026-03-04',
+      chunks: 1,
+      images: 0,
+      monthPrecision: 0,
+      ambiguousDates: 1,
+      assumedYear: false,
+      yearUsed: null,
+      perMonth: [],
+      stages: [],
+    },
+    assumedYear: false,
+    coverage: { shown: 1, total: 1 },
+  });
+  const user = messages.find((message) => message.role === 'user').content;
+  assert.match(user, /THE SHAPE OF THIS DOCUMENT/, 'the shape block is built and not sent');
+  assert.match(user, /The document has 1 entries, 1 words, and 1 notes were indexed\./);
+  assert.match(user, /a form that can be read two ways/, 'the ambiguous-date warning never reaches the model');
+  assert.match(user, /EVERY note in the document is quoted below/, 'the coverage of a whole-document read never reaches the model');
+  // …and when it is only PART of the document, the model is told to say so rather than sounding
+  // finished. This is the sentence that stops a partial list reading as a complete one.
+  const partial = buildMessages({
+    question: 'List the employers.',
+    notes: [{ label: 'A', date: null, dateRaw: null, text: 'x', places: [], people: [] }],
+    facts: [],
+    stats: { characters: 1, words: 1, entries: 1, datedEntries: 0, firstDate: null, lastDate: null, chunks: 40, images: 0, monthPrecision: 0, ambiguousDates: 0, assumedYear: false, yearUsed: null, perMonth: [], stages: [] },
+    assumedYear: false,
+    coverage: { shown: 12, total: 40 },
+  });
+  const partialUser = partial.find((message) => message.role === 'user').content;
+  assert.match(partialUser, /first 12 of them are quoted below/, 'a partial read is not declared to the model');
+  assert.match(partialUser, /the list may be incomplete/, 'the model is not told to admit a partial list');
 });
 
 test('a lone letter is still dropped, and a lone digit is still kept', () => {

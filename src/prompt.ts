@@ -93,6 +93,17 @@ export interface BuildPromptInput {
   stats: IndexStats;
   /** The year the reader supplied, when the document writes none. */
   assumedYear: boolean;
+  /**
+   * How much of the document is quoted below, when the question asked for a list.
+   *
+   * 🔴 SET ONLY ON THE WHOLE-DOCUMENT PATH, and it exists because the model must know whether it is
+   * looking at a complete set. Asked *"Which employers and job titles are named?"* a model given
+   * eight notes of twenty answered with the four employers those eight held and closed with *"…are
+   * the employers"* — a complete-sounding sentence built on a quarter of the document. Told in
+   * words that it has every note, it can answer with a complete list; told it has the first N of M,
+   * it can say so instead of sounding finished.
+   */
+  coverage?: { shown: number; total: number };
 }
 
 /** The whole conversation, as the model sees it. */
@@ -115,6 +126,13 @@ export function buildMessages(input: BuildPromptInput): ChatMessage[] {
   }
   if (input.stats.ambiguousDates > 0) {
     shape.push(`${input.stats.ambiguousDates} date is written in a form that can be read two ways.`);
+  }
+  if (input.coverage) {
+    shape.push(
+      input.coverage.shown === input.coverage.total
+        ? `EVERY note in the document is quoted below — all ${input.coverage.total} of them — because the question asks for a list. Nothing has been left out, so a list you write must be complete: name everything the document names, and do not write "the notes I was given" or anything like it.`
+        : `The document has ${input.coverage.total} notes and the first ${input.coverage.shown} of them are quoted below, because the question asks for a list and the whole document does not fit. Say plainly, in your answer, that only part of the document was read and that the list may be incomplete.`
+    );
   }
 
   const notes = input.notes
@@ -147,9 +165,20 @@ export function buildMessages(input: BuildPromptInput): ChatMessage[] {
       ? `\n\nBegin your answer with the date this question asks about, written as the document writes it (${asked.join(', ')}), then answer.`
       : '';
 
+  // 🔴 THIS BLOCK WAS BUILT AND NEVER SENT — FOUND ON 22 SEP 2026, BY A TEST THAT WAS WRITTEN TO
+  // CHECK SOMETHING ELSE. `shape` was filled in five places (the entry and note counts, whether the
+  // document carries dates, the year the reader supplied, a date that can be read two ways, and how
+  // much of the document is quoted) and then dropped on the floor: `buildMessages` returned only the
+  // system prompt and the notes. So the model was never told the document's size, never told the
+  // reader supplied a year, and never told a date was ambiguous — while the prompt's rule 3 pointed
+  // it at "the facts section" for numbers it had never received. The test that caught it was the one
+  // asserting the model is told it has been given the WHOLE document for a list question; the line
+  // went in here, and arrived nowhere.
+  const shapeText = shape.length > 0 ? `\n\nTHE SHAPE OF THIS DOCUMENT\n\n${shape.join('\n')}` : '';
+
   const user = `THE FACTS, COUNTED BY THE PROGRAM OVER THE WHOLE DOCUMENT. These are correct and final; never recount them.
 
-${factsAsText(input.facts)}
+${factsAsText(input.facts)}${shapeText}
 
 THE DOCUMENT
 
