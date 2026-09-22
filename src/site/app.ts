@@ -1256,7 +1256,7 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
  * What the document is about: the places, people and amounts it mentions most.
  *
  * Drawn from the document the server sent back, never from the page's own reading of
- * the text — every number on this page was counted by the program, and the page only
+ * the text — every number on this page was counted in code, and the page only
  * draws them.
  */
 function renderComposition(document: DocumentView): void {

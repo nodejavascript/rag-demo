@@ -133,14 +133,22 @@ test('the line explaining the Index button lines up with the controls around it'
   assert.match(rule, /margin-top:\s*[1-9]/, 'and it is still touching the buttons above it');
 });
 
-test('and the pictures it finds are called images, not pictures', () => {
-  // One concept, one word. The hero has always said "images"; the step-1 line said "pictures", and
-  // so did the message a reader gets after pasting a scanned PDF. Two names for one thing leaves a
-  // reader wondering whether they are the same thing — part of the same pass George asked for on
-  // 22 September 2026: *"also review all the text and reword where necessary"*.
-  const body = site('index.html').split('<body')[1];
-  assert.doesNotMatch(body, /\bpictures\b/i, 'the page calls them pictures again');
-  assert.match(body, /\bimages\b/, 'and the page never says images at all');
+test('and the pictures it finds are called images, and the counting is only ever "in code"', () => {
+  // One concept, one word — and one claim, one phrasing. The hero said "images" while the step-1
+  // line said "pictures"; and the page's central promise appeared as BOTH "counted in code" and
+  // "counted by the program", sometimes in the same sentence.
+  //
+  // 🔴 THE WHOLE FILE IS READ, NOT THE BODY. The first version of this guard started at `<body`
+  // — so it passed while the meta description and the JSON-LD FAQ block went on saying "pictures"
+  // and "by the program". Those are the two strings a SEARCH ENGINE reads, which makes them the
+  // most public sentences the site has, and the guard was blind to both. Found on 22 Sep 2026 by
+  // counting the strings in the SERVED page instead of trusting the test: 1 × "pictures",
+  // 1 × "counted by the program", both in the head.
+  const page = site('index.html');
+  assert.doesNotMatch(page, /\bpictures\b/i, 'something on the page calls them pictures again');
+  assert.match(page, /\bimages\b/, 'and the page never says images at all');
+  assert.doesNotMatch(page, /by the program\b/i, 'the counting claim is back to two phrasings');
+  assert.match(page, /in code/, 'and the page never says "in code" at all');
   const server = readFileSync(join(here, '..', 'src', 'server.ts'), 'utf8');
   assert.match(server, /pages are images rather than words/, 'the scanned-PDF message went back to "pictures"');
 });
