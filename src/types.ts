@@ -221,6 +221,22 @@ export interface Answer {
   prose: string;
   /** `grounded` when the model wrote it, `refused` when nothing matched. */
   mode: 'grounded' | 'refused';
+  /**
+   * WHICH ROUTE REFUSED — and the page cannot tell the truth without it.
+   *
+   * 🔴 THERE ARE TWO WAYS TO REFUSE, AND ONLY ONE OF THEM SKIPS THE MODEL. The search refuses when
+   * nothing came close enough (`'search'`, and no model is called); the model itself can decline to
+   * answer from the notes it was given (`'model'`, and the model ran for as long as it ran). The page
+   * printed ONE sentence for both — *"…so no model was called — that refusal is a fact about the
+   * document, worked out in milliseconds"* — and printed it directly above a timings line reading
+   * *"model 1.6 s"*. Two statements contradicting each other on screen, and the false one was the
+   * sentence in the page's own voice. Found 22 Sep 2026 on a job posting asked for performance
+   * objectives it does not have.
+   *
+   * `null` on a grounded answer. A page that cannot read this field must fall back to a sentence
+   * that is true either way, never to the search wording.
+   */
+  refusedBy: 'search' | 'model' | null;
   sources: Source[];
   /**
    * What the document does NOT say — counted in code over its whole text, never generated.

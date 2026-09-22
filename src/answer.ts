@@ -249,6 +249,9 @@ export async function answer(
       raw: '',
       prose: '',
       mode: 'refused',
+      // The SEARCH refused: nothing came close enough, so no model was called. This is the route the
+      // page's "no model was called" sentence was written for, and the only one it is true of.
+      refusedBy: 'search',
       sources: [],
       gaps,
       conflicts,
@@ -321,6 +324,9 @@ export async function answer(
     raw: reply,
     prose: refused ? '' : prose || reply,
     mode: refused ? 'refused' : 'grounded',
+    // The MODEL refused — it ran, read the notes, and declined to answer from them. The page must
+    // not say no model was called, because the timings beside it say otherwise.
+    refusedBy: refused ? 'model' : null,
     sources,
     gaps,
     conflicts,

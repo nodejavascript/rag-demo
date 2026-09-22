@@ -126,6 +126,13 @@ interface Answer {
   raw: string;
   prose: string;
   mode: 'grounded' | 'refused';
+  /**
+   * Which route refused: the search (no model was called) or the model itself.
+   *
+   * ⚠️ MIRRORED BY HAND FROM `src/types.ts`, like every other type in this file — the site bundle
+   * cannot import server code. If the server's shape changes, this must change with it.
+   */
+  refusedBy?: 'search' | 'model' | null;
   sources: Source[];
   /** The document as a row of cells, with the entries the answer used marked. */
   spine?: Spine;
@@ -2210,8 +2217,22 @@ function renderAnswer(answer: Answer): void {
 
   if (answer.mode === 'refused') {
     el.answer.classList.add('refused');
+    // 🔴 TWO ROUTES REFUSE, AND ONLY ONE OF THEM SKIPPED THE MODEL. The search refuses when nothing
+    // came close enough and no model was called; the MODEL can refuse too, having run and found
+    // nothing in the notes to answer from. This printed ONE sentence for both — *"…so no model was
+    // called — that refusal is a fact about the document, worked out in milliseconds"* — directly
+    // above a timings line reading *"model 1.6 s"*. The reader was shown two statements that
+    // contradict each other, and the untrue one was written in the page's own voice. Found 22 Sep
+    // 2026: a job posting asked for performance objectives it does not have, answered by the model
+    // with a refusal, and reported by the page as a search refusal that never happened.
     el.answerProse.textContent =
-      'The document does not say. Nothing in it matched this question closely enough to answer from, so no model was called — that refusal is a fact about the document, worked out in milliseconds.';
+      answer.refusedBy === 'model'
+        ? 'The document does not say. The notes that matched closest were read, and there was nothing in them to answer this from — so this is a refusal rather than an answer, and the timings below are what the work took.'
+        : answer.refusedBy === 'search'
+          ? 'The document does not say, and nothing in it came close enough to answer from — so no model was called, and that refusal is a fact about the document, worked out in milliseconds.'
+          : // An answer from a server that does not say which route refused must not be described as
+            // either: the reader gets a sentence that is true whichever way it happened.
+            'The document does not say.';
   } else {
     el.answer.classList.remove('refused');
     el.answerProse.innerHTML = markCitations(answer.prose);

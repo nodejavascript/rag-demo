@@ -1154,3 +1154,53 @@ test('and a question with nothing to answer from reports no model stage at all',
     close();
   }
 });
+
+/**
+ * 🔴 THE TWO WAYS TO REFUSE ARE NOT THE SAME REFUSAL, AND THE PAGE MUST KNOW WHICH ONE HAPPENED.
+ *
+ * Measured on 22 Sep 2026: asked *"What are the performance objectives?"* about a job posting with no
+ * such section, the page said *"…so no model was called — that refusal is a fact about the document,
+ * worked out in milliseconds"* — directly above a timings line reading *"model 1.6 s"*. Both were the
+ * page's own words, and they contradicted each other, because it printed ONE refusal sentence for two
+ * very different events: the search refusing before any model runs, and the model refusing after
+ * reading the notes. `answer()` now says which, and this test pins both routes.
+ */
+test('a refusal says whether the search refused or the model did', async () => {
+  const { store, close } = scratch();
+  try {
+    // 1 · THE MODEL REFUSED. It was called, it read the notes, and it declined to answer from them —
+    //     so the page must never claim no model was called.
+    const model = stubModel('The document does not say.');
+    const { document } = await indexDocument(store, model, { text: diary });
+    // A question this document says nothing about, and that asks for neither a list nor a date range
+    // — so the reply decides the route. (A date-range question is answered from the counts instead,
+    // which is a different path entirely.)
+    const byModel = await answer(store, model, document.id, 'quantum chromodynamics lattice gauge theory', {
+      retrieve: { refusalFloor: 0, useRerank: false },
+    });
+    assert.equal(byModel.mode, 'refused', 'a refusal-shaped reply must be shown as a refusal');
+    assert.equal(
+      byModel.refusedBy,
+      'model',
+      'the model route must be labelled as the model, because it ran and the timings show it'
+    );
+
+    // 2 · THE SEARCH REFUSED. Nothing came close enough, so no model was called at all — the one route
+    //     where "no model was called" is true.
+    let called = 0;
+    const counting = stubModel();
+    const realChat = counting.chat.bind(counting);
+    counting.chat = async (...args) => {
+      called += 1;
+      return realChat(...args);
+    };
+    const bySearch = await answer(store, counting, document.id, 'quantum chromodynamics lattice gauge theory', {
+      retrieve: { refusalFloor: 0.99, useRerank: false },
+    });
+    assert.equal(bySearch.mode, 'refused');
+    assert.equal(bySearch.refusedBy, 'search', 'the search route must be labelled as the search');
+    assert.equal(called, 0, 'the search route must not call the model at all');
+  } finally {
+    close();
+  }
+});
