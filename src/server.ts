@@ -275,7 +275,7 @@ const server = createServer((request, response) => {
         if (text.length === 0) {
           sendJson(response, 400, {
             error:
-              'That PDF has no text in it. If it is a scan, the pages are pictures rather than words, and it needs to be run through OCR first.',
+              'That PDF has no text in it. If it is a scan, its pages are images rather than words, so the text has to be read off the page first.',
           });
           return;
         }

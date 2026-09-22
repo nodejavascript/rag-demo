@@ -114,6 +114,37 @@ test('and step 2 is named for what it shows, not for what it used to do', () => 
   );
 });
 
+test('the line explaining the Index button lines up with the controls around it', () => {
+  // 🔴 "this text is misaligned and crowded" — George, 22 September 2026, quoting this paragraph
+  // from the live page. Measured in a browser that morning: the file-button row started at x=45,
+  // the row holding "Index it" at x=45, and the paragraph explaining that button at x=88 — because
+  // `.step > p.hint` indents 43px, so a hint reads as a subtitle under the step's number badge.
+  // Right directly beneath a heading; wrong between two rows of controls. It also carried no top
+  // margin, so it touched the buttons above it.
+  //
+  // Asserted against the override's own numbers rather than a pixel position: a static test cannot
+  // see a layout, but it can insist the rule that fixes it exists and says the right thing. Without
+  // this, deleting one line of CSS puts the 43px indent straight back and nothing else notices.
+  const css = site('styles.css');
+  const at = css.indexOf('#index-hint {');
+  assert.notEqual(at, -1, 'nothing overrides the 43px step indent for #index-hint');
+  const rule = css.slice(at, css.indexOf('}', at));
+  assert.match(rule, /margin-left:\s*0/, 'the line is indented away from the two rows it sits between');
+  assert.match(rule, /margin-top:\s*[1-9]/, 'and it is still touching the buttons above it');
+});
+
+test('and the pictures it finds are called images, not pictures', () => {
+  // One concept, one word. The hero has always said "images"; the step-1 line said "pictures", and
+  // so did the message a reader gets after pasting a scanned PDF. Two names for one thing leaves a
+  // reader wondering whether they are the same thing — part of the same pass George asked for on
+  // 22 September 2026: *"also review all the text and reword where necessary"*.
+  const body = site('index.html').split('<body')[1];
+  assert.doesNotMatch(body, /\bpictures\b/i, 'the page calls them pictures again');
+  assert.match(body, /\bimages\b/, 'and the page never says images at all');
+  const server = readFileSync(join(here, '..', 'src', 'server.ts'), 'utf8');
+  assert.match(server, /pages are images rather than words/, 'the scanned-PDF message went back to "pictures"');
+});
+
 /* ------------------------------------------------------------------ identity */
 
 test('the title and og:site_name ARE the host, not a name for it', () => {

@@ -801,8 +801,8 @@ function renderHeat(grid: MentionMonths | undefined): void {
   el.heatBox.hidden = false;
   el.heatNote.textContent =
     'Each row is one of the things this document mentions most and each column is a month, ' +
-    'so a brighter cell means more notes in that month mention it. Only the notes are counted, ' +
-    'never the words, and never by the model.';
+    'so a brighter cell means more notes in that month mention it. The counts are of notes, ' +
+    'not of words — and they are counted in code, never by the model.';
   painting(el.heat, () => drawHeat(el.heat, grid));
 }
 
@@ -1240,7 +1240,7 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
     parts.push(
       stats.monthPrecision > 0
         ? `${plural(stats.monthPrecision, 'entry', 'entries')} wrote a month and a year but no day, so it sits on the month and no particular day is claimed.`
-        : 'Counted by the program, over the whole document.'
+        : 'Counted in code, over the whole document.'
     );
     el.timelineNote.textContent = parts.join(' ');
   } else {
@@ -2038,9 +2038,15 @@ async function reportHealth(): Promise<void> {
       embedModel?: string;
     }>(response);
     if (response.ok && body.ok) {
+      // 🔴 `provider` IS THE SHAPE OF THE API, NOT THE COMPANY BEHIND THE MODEL. It read
+      // `model: @cf/meta/llama-3.1-8b-instruct-fp8 for answers, @cf/baai/bge-m3 for search ·
+      // openai` — which tells a reader that OpenAI answers the questions, and it does not: those
+      // are Cloudflare Workers AI models behind an OpenAI-shaped endpoint. Two of the three
+      // words are factual and the third invited a wrong conclusion, on a page whose whole claim
+      // is that it says exactly what it is. Labelled, the same string is true.
       where.innerHTML =
-        `<div class="statline">model: <b>${esc(body.chatModel ?? '?')}</b> for answers, ` +
-        `<b>${esc(body.embedModel ?? '?')}</b> for search · <b>${esc(body.provider ?? '?')}</b>` +
+        `<div class="statline">Answers come from <b>${esc(body.chatModel ?? '?')}</b>, ` +
+        `search uses <b>${esc(body.embedModel ?? '?')}</b> · API: <b>${esc(body.provider ?? '?')}</b>` +
         `</div>`;
       return;
     }

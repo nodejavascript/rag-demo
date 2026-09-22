@@ -169,8 +169,8 @@
           <div class="step-head"><div class="step-n">1</div><h2>Give it something to read</h2></div>
           <p class="hint">
             Paste it, or drop a <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.html</code> or
-            <code>.pdf</code> file anywhere on this box. Text copied straight out of a web page is fine — the
-            tags come off for you, and a PDF is read for you.
+            <code>.pdf</code> file anywhere on this box. Text copied straight out of a web page is fine:
+            the tags are stripped out, and a PDF is read for you.
           </p>
 
           <div class="paste-wrap">
@@ -192,8 +192,9 @@ It works best when the document has its own structure: dates on their own line, 
                next section, so a reader pasted a document and then had to go looking for the
                button below the fold. The thing that acts on a box belongs beside the box. -->
           <p class="hint" id="index-hint">
-            Indexing splits the document into entries, works out its dates, finds the places, people,
-            amounts and pictures, and embeds every note so it can be searched by meaning.
+            Indexing splits the document into entries, works out their dates, and finds the places,
+            people, amounts and images in it. Every note is embedded, so the document can be searched
+            by meaning.
           </p>
           <div class="row">
             <button type="button" id="index" class="primary" disabled>Index it</button>
@@ -223,8 +224,8 @@ It works best when the document has its own structure: dates on their own line, 
                what came back. It now says what it shows. -->
           <div class="step-head"><div class="step-n">2</div><h2>What it read</h2></div>
           <p class="hint">
-            What the index made of the document — every figure below counted in code, over the whole of
-            it, never guessed by the model.
+            What the index made of the document. Every figure below is counted in code across the whole
+            of it — never guessed by the model.
           </p>
 
           <div id="shape" hidden>
@@ -233,12 +234,12 @@ It works best when the document has its own structure: dates on their own line, 
             <div class="charts">
               <div class="chart-box">
                 <h3>The shape of it over time</h3>
-                <p id="timeline-note">Entries per month, counted by the program.</p>
+                <p id="timeline-note">Entries per month, counted in code.</p>
                 <canvas id="timeline" height="190"></canvas>
               </div>
               <div class="chart-box">
                 <h3>What it is about</h3>
-                <p>The places, people and amounts it mentions most, counted by the program.</p>
+                <p>The places, people and amounts it mentions most, counted in code.</p>
                 <canvas id="composition" height="190"></canvas>
               </div>
             </div>
@@ -303,7 +304,7 @@ It works best when the document has its own structure: dates on their own line, 
             </div>
             <div class="chart-box" id="funnel-box" hidden>
               <h3>How it found it</h3>
-              <p id="funnel-note">Each bar is a stage of the search, and the number is how many notes were still in play after it — counted by the stage itself, never inferred.</p>
+              <p id="funnel-note">Each bar is a stage of the search; the number is how many notes were still in play after it. Counted by the stage itself, never inferred.</p>
               <canvas id="funnel" height="120"></canvas>
             </div>
             <div class="details" id="answer-details"></div>
@@ -449,10 +450,10 @@ It works best when the document has its own structure: dates on their own line, 
       <div class="consentAsk" id="consentAsk">
         <h2 class="consentTitle" id="consentTitle">Cookies are your call</h2>
         <p class="consentText">
-          This page keeps no account and stores nothing about you. The one thing it would like is
-          a count of how people use it —
+          There is no account here and nothing is stored about you. The one thing this page would
+          like is a count of how it is used —
           <b>and the text you paste is never sent to Google, whatever you answer here.</b>
-          Analytics is the only cookie on this page, it is not loaded until you say yes,
+          Analytics is the only cookie; it is not loaded until you say yes,
           and <b>saying no makes no request to Google at all</b>.
         </p>
         <div class="consentActions">
