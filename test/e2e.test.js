@@ -1484,3 +1484,132 @@ test('the label in the answer chart is centred on the bar it belongs to', async 
       `${JSON.stringify(measured.bands)}`
   );
 });
+
+/**
+ * 🔴 AN EMPTY CHART IN A BOX TITLED "HOW IT READ IT" IS WORSE THAN NO CHART.
+ *
+ * George, 22 Sep 2026, verbatim: *"same input, and clicked index it and ### How it read it did nothing"*.
+ * He was re-indexing a book that was already indexed. A reused run streams no batches, so the chart is
+ * never drawn — and the box, with its title, was left on screen holding nothing at all. The click had
+ * become invisible: the button went disabled and enabled inside a tenth of a second and no drawing
+ * appeared.
+ *
+ * This reproduces it exactly: index a document, RELOAD the page (so nothing has been painted in this
+ * session), then index the same text again. The chart must not be shown, and the button must say what
+ * happened.
+ */
+test('re-indexing a document already indexed does not leave an empty chart on screen', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so nothing can be indexed');
+
+  const text = await diary();
+  await paste(text);
+  await page.click('#index');
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 60000 });
+
+  // A fresh page: nothing has been painted in this session, which is the state he was in.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.fill('#paste', text);
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 20000 });
+  await page.click('#index');
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 60000 });
+  await page.waitForTimeout(300);
+
+  const after = await page.evaluate(() => ({
+    chartHidden: document.getElementById('index-chart').hidden,
+    note: document.getElementById('index-progress-note').innerText,
+    button: document.getElementById('index').innerText.trim(),
+    stat: document.getElementById('index-stat').innerText,
+  }));
+
+  assert.equal(
+    after.chartHidden,
+    true,
+    `a reused run must not leave an empty chart on screen — ${JSON.stringify(after)}`
+  );
+  assert.match(after.note, /already indexed/i, `the box must say why — got "${after.note}"`);
+  assert.match(
+    after.button,
+    /already indexed/i,
+    `the click must visibly do something — the button says "${after.button}"`
+  );
+});
+
+/**
+ * 🔴 ONE DOCUMENT AT A TIME.
+ *
+ * George, 22 Sep 2026, verbatim: *"when i index something, remove that last thing indexed first, i dont
+ * wantr to combine inputs"*. The page replaced what it showed but left every earlier paste in the store
+ * until its 24-hour expiry, so a session accumulated documents and the reader could not tell that the
+ * thing they were asking about was not the only thing on the site. Indexing now removes the previous one
+ * — after the new one is safely in, so a paste that fails cannot destroy the last good document.
+ */
+test('indexing a new document removes the one before it', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so nothing can be indexed');
+
+  // Record the id of every document the page indexes, and every delete it asks for.
+  await page.addInitScript(() => {
+    window.__indexed = [];
+    window.__deleted = [];
+    const real = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : String((input && input.url) || '');
+      const method = (init && init.method) || 'GET';
+      if (url.includes('/api/document/') && method === 'DELETE') {
+        window.__deleted.push(url.split('/api/document/')[1]);
+      }
+      const answer = real.apply(this, arguments);
+      if (url.includes('/api/index')) {
+        answer
+          .then((response) => response.clone().text())
+          .then((body) => {
+            const line = body.split('\n').find((row) => row.includes('"document"'));
+            if (line) {
+              try {
+                const id = JSON.parse(line).document.id;
+                if (!window.__indexed.includes(id)) window.__indexed.push(id);
+              } catch {
+                /* a line that will not parse is not an index result */
+              }
+            }
+          })
+          .catch(() => {});
+      }
+      return answer;
+    };
+  });
+
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.fill('#paste', await diary());
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 20000 });
+  await page.click('#index');
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 60000 });
+
+  // A different document — his own resume, which is not a diary at all.
+  await page.fill('#paste', RESUME);
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 20000 });
+  await page.click('#index');
+  await page.waitForFunction(() => window.__indexed.length === 2, null, { timeout: 120000 });
+  await page.waitForFunction(() => window.__deleted.length > 0, null, { timeout: 20000 });
+
+  const seen = await page.evaluate(() => ({ indexed: window.__indexed, deleted: window.__deleted }));
+  assert.equal(seen.indexed.length, 2, `two documents were indexed — ${JSON.stringify(seen)}`);
+  assert.ok(
+    seen.deleted.includes(seen.indexed[0]),
+    `the first document must be deleted when the second is indexed — ${JSON.stringify(seen)}`
+  );
+  assert.ok(
+    !seen.deleted.includes(seen.indexed[1]),
+    `the document now on screen must not be deleted — ${JSON.stringify(seen)}`
+  );
+
+  // And the server agrees: the first one is gone.
+  const gone = await page.evaluate(async (id) => {
+    const response = await fetch(`./api/document/${id}`);
+    return response.status;
+  }, seen.indexed[0]);
+  assert.equal(gone, 404, `the previous document must be gone from the server — it answered ${gone}`);
+});

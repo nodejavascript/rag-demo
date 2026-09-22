@@ -1700,6 +1700,17 @@ async function readJsonLines(
  * into a parser complaint instead of naming what happened — so a line that will not parse is
  * reported in terms of what it actually is.
  */
+/**
+ * 🔴 SET `hidden` ONLY WHEN IT CHANGES. A write of the same value is still an attribute record,
+ * and a browser test that watches this chart for movement counts it — measured 22 Sep 2026, when a
+ * reused run rewrote `hidden = false` over a chart that was already visible, and the "changes
+ * nothing on the page" test counted that as the blink it is meant to catch. "Nothing changes" has
+ * to mean nothing is WRITTEN, not that the value happens to be the same.
+ */
+function setHidden(node: HTMLElement, hidden: boolean): void {
+  if (node.hidden !== hidden) node.hidden = hidden;
+}
+
 async function readIndexStream(
   response: Response,
   onProgress: (progress: { stage: string; done: number; total: number; ms: number }) => void
@@ -1715,6 +1726,18 @@ async function indexNow(): Promise<void> {
   clear(el.indexError);
   el.indexButton.disabled = true;
   el.indexButton.innerHTML = '<span class="spinner"></span>Indexing';
+
+  // 🔴 ONE DOCUMENT AT A TIME — the previous one is removed once a new one is safely in.
+  // George, 22 Sep 2026, verbatim: *"when i index something, remove that last thing indexed first, i
+  // dont wantr to combine inputs"*. Before this the page replaced what it was showing but left every
+  // earlier paste in the store until its 24-hour expiry, so a session accumulated documents — and the
+  // reader had no way to see that the thing they were asking about was not the only thing on the site.
+  //
+  // ⚠️ CAPTURED HERE AND DELETED AFTER THE NEW INDEX SUCCEEDS, not before. His words say "first", and
+  // the intent — never accumulate — is met either way; deleting before would mean a paste that fails
+  // destroys the last good document in the same breath. So the old one goes only once the new one is in.
+  const previousId = current?.id ?? null;
+  let reusedInThisRun = false;
 
   const points: ProgressPoint[] = [];
   let total = 0;
@@ -1761,11 +1784,23 @@ async function indexNow(): Promise<void> {
           : (STAGE_WORDS[progress.stage] ?? 'Working…');
       el.indexStat.textContent = note;
       el.indexProgressNote.textContent = `${note} ${(progress.ms / 1000).toFixed(1)} s so far.`;
-      // The box is already on screen — and the chart goes on screen here, on the first real
-      // progress event and not before, so a run that never reports anything never flashes one.
-      el.indexChart.hidden = false;
-      // `fit()` can measure it because the box is already visible.
-      painting(el.indexChart, () => drawProgress(el.indexChart, points, Math.max(total, 1)));
+      // 🔴 ONE POINT IS NOT A CHART, AND THIS IS THE EMPTY BOX GEORGE FOUND. The reading stage
+      // reports `done=1, total=1` the moment the text has been fingerprinted, and on a **reused**
+      // document that event is the ONLY one — so the chart was revealed, `drawProgress` was handed a
+      // single point, and a point has no span: it painted nothing. The result was a white box under
+      // the title "How it read it" and a click that appeared to do nothing at all. His words, 22 Sep
+      // 2026: *"same input, and clicked index it and ### How it read it did nothing"*.
+      //
+      // So the rule is now what it should have been from the start: the canvas is on screen when there
+      // is a LINE to draw — two points — and once drawn it stays, because a chart from an earlier run
+      // of this document is a true record of that run and taking it away is the blink reported a
+      // moment earlier. A run of one point leaves the box to the sentence, which says why.
+      if (points.length > 1 || indexChartPainted) {
+        setHidden(el.indexChart, false);
+        indexChartPainted = true;
+        // `fit()` can measure it because the box is already visible.
+        painting(el.indexChart, () => drawProgress(el.indexChart, points, Math.max(total, 1)));
+      }
     })) as {
       document?: DocumentView;
       reused?: boolean;
@@ -1781,6 +1816,14 @@ async function indexNow(): Promise<void> {
     if (!body.document) throw new Error(body.error ?? 'The server sent no index.');
 
     current = body.document;
+    reusedInThisRun = body.reused === true;
+    // The previous document goes now that this one exists. A different id only: asking the same text
+    // again returns the SAME document, and deleting it would throw away the index just reused.
+    if (previousId && previousId !== body.document.id) {
+      void fetch(`./api/document/${previousId}`, { method: 'DELETE' }).catch(() => {
+        /* it expires on its own if this fails; the sweep is the backstop */
+      });
+    }
     // 🔴 THE SECTION IS REVEALED BEFORE ANYTHING IS DRAWN INTO IT. A canvas in a hidden section
     // has no layout, so `fit()` measured the 320-pixel fallback, drew a 320-wide bitmap, and the
     // page stretched it across the full column — 2.56× on the heat map. The order was the bug.
@@ -1801,16 +1844,22 @@ async function indexNow(): Promise<void> {
     // costs the reader nothing who has moved on to the answer.
     el.indexProgressTitle.textContent = 'How it read it';
     el.indexProgressNote.textContent = body.reused
-      ? 'Nothing to do — this exact text was already indexed.'
+      ? 'This exact text was already indexed, so its notes were reused instead of read again. The ' +
+        'run that built them is drawn in "How it was indexed" below.'
       : `${plural(body.document.stats.chunks, 'note')} embedded in ${(body.document.stats.embeddingMs / 1000).toFixed(1)} s. One line per batch, as it happened.`;
-    // 🔴 A CHART WITH NOTHING ON IT IS NOT A CHART — AND A CHART ALREADY ON SCREEN IS NOT TAKEN AWAY.
-    // On the reused path no batch is ever sent, so there are no points and the axes would draw an
-    // empty box reading `0` to `1`, which looks like a measurement that failed. The old line was
-    // `hidden = points.length === 0`, which put a chart on screen and then removed it — the blink
-    // George reported. Now nothing is drawn and nothing is hidden: a chart left over from an
-    // earlier run of this document is a true record of that run, and keeping it means the second
-    // run of the same text changes nothing on the page at all. Nothing moves.
-    if (points.length > 0) el.indexChart.hidden = false;
+    // 🔴 A CHART WITH NOTHING ON IT IS NOT A CHART — AND A CHART ALREADY ON SCREEN IS NOT TAKEN
+    // AWAY. Two faults, one line apart, and both are a chart saying something false.
+    //   · `hidden = points.length === 0` put a chart on screen and then removed it — the blink
+    //     George reported.
+    //   · `points.length > 0` then kept it on screen for a run of a SINGLE point, and a single
+    //     point has no span: the canvas was revealed and nothing was painted inside it, so the box
+    //     sat there titled "How it read it" holding white space. That is the state he found on
+    //     22 Sep 2026 re-indexing a book — a reused run's only progress event is the reading step,
+    //     `done=1, total=1`, which is exactly one point.
+    // So the canvas is visible when something has been DRAWN in this session, and hidden when
+    // nothing has. A chart from an earlier run of this document is a true record of that run, so it
+    // stays — which is what makes the second run of the same text change nothing on the page.
+    setHidden(el.indexChart, !indexChartPainted);
 
     el.shapeWarnings.innerHTML = (body.warnings ?? [])
       .map((warning) => `<div class="warn-box">${esc(warning)}</div>`)
@@ -1837,7 +1886,19 @@ async function indexNow(): Promise<void> {
     // Not simply re-enabled: the length rule still applies, so a failed index leaves the button
     // exactly as available as it was before it was pressed.
     el.indexButton.disabled = el.paste.value.trim().length < MIN_CHARS;
-    el.indexButton.textContent = 'Index it';
+    // 🔴 THE CLICK MUST VISIBLY DO SOMETHING, EVEN WHEN THERE IS NOTHING TO DO. A reused run finishes in
+    // about a tenth of a second — the button goes disabled and enabled too fast to see and the chart
+    // draws nothing — so the button itself says what happened, for long enough to read it, and only
+    // while nothing else is running. George reported this on 22 Sep 2026 as *"How it read it did
+    // nothing"*, looking at an empty canvas inside a box with that title.
+    if (reusedInThisRun) {
+      el.indexButton.textContent = 'Already indexed';
+      window.setTimeout(() => {
+        if (!el.indexButton.disabled) el.indexButton.textContent = 'Index it';
+      }, 2000);
+    } else {
+      el.indexButton.textContent = 'Index it';
+    }
   }
 }
 
@@ -1963,6 +2024,21 @@ function markAnswered(durationMs: number): void {
  */
 let asking: AbortController | null = null;
 let askGeneration = 0;
+
+/**
+ * Whether the index progress chart has been DRAWN in this page session.
+ *
+ * 🔴 AN EMPTY CHART IS WORSE THAN NO CHART, AND GEORGE FOUND IT. On 22 Sep 2026 he re-indexed a book
+ * that was already indexed, clicked **Index it**, and reported *"How it read it did nothing"*. He was
+ * looking at a canvas that was on screen, inside a box with that title, holding nothing at all: a
+ * reused run streams no batches, so the chart is never drawn — and the box had been left visible.
+ *
+ * So the chart is hidden when a run produces nothing to draw **and nothing was drawn before** in this
+ * session. If a real run already painted it, the drawing STAYS, because it is a true record of that
+ * run and taking it away is the blink reported a moment earlier. Two faults, one line apart, and both
+ * of them are about a chart that says something false.
+ */
+let indexChartPainted = false;
 
 async function askNow(): Promise<void> {
   if (!current || !el.question.value.trim()) {
