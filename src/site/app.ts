@@ -1344,7 +1344,14 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
       `${stats.datedEntries.toLocaleString()}`,
       stats.datedEntries === 1 ? 'entry with a day, month and year' : 'entries with a day, month and year'
     ),
-    card('Notes', stats.chunks.toLocaleString(), 'what gets searched'),
+    // 🔴 THE NOTES CARD IS GONE — George, 22 Sep 2026: *"wait i mean delete this now card, that is
+    // what i want moved up"*, correcting *"put card 4 above card 2"*. So the move was half of it and
+    // this is the other half: the card that was displaced is removed rather than pushed down, and
+    // "Full dates" takes its place in the row. It is also the one card that told the reader nothing
+    // the card beside it had not already told them — on his own book it read 679 notes against 675
+    // entries, because a note is a block unless a block has to be split. The count itself is
+    // untouched: `stats.chunks` still drives the notes map, the caption and the answer, and only the
+    // card that repeated it on screen has gone. Say the word and it comes back in one line.
     card('Words', stats.words.toLocaleString(), `${stats.characters.toLocaleString()} characters`),
     card(
       'Placeable',

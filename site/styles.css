@@ -365,8 +365,19 @@ input:focus { border-color: var(--accent-2); }
   border-radius: 12px;
   padding: 13px 14px 10px;
 }
-.chart-box h3 { margin: 0 0 2px; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
-.chart-box p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+/* 🔴 THE CAPTION HAD NO ROOM ABOVE IT. George, 22 Sep 2026, verbatim: *"missing the vertical
+   spacing"* — said of the sentence under each chart heading. Measured on dev at seven widths from
+   1400px down to 380px: the gap between the heading and its caption was **2px at every one of
+   them**, so a small-caps label and the sentence explaining it read as one cramped block, and the
+   drawing below it started 8px later. The three distances are now deliberate — 7px under the
+   heading, 11px under the caption before the drawing — so each of the three things in the box
+   (heading, sentence, drawing) is separated by a visible step rather than touching the next.
+   ⚠ The caption's own measure is left alone: `max-width: 72ch` below is deliberate from 20 Sep
+   2026, so the sentence is not one long line across an 850px panel. It does mean the caption stops
+   short of the drawing's right edge on a wide screen — reported to George rather than changed,
+   because it is a different question from this one. */
+.chart-box h3 { margin: 0 0 7px; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+.chart-box p { margin: 0 0 11px; font-size: 12.5px; color: var(--muted); }
 .chart-box canvas { display: block; width: 100%; }
 
 /* 🔴 EVERY CHART FILLS ITS BOX — superseding the 720px cap of 20 September 2026.
