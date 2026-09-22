@@ -95,7 +95,17 @@ THE RULES
         Senior Software Engineer, First Canadian Title
         July 2021 to September 2026, Hamilton, Ontario
 
-    The EMPLOYER is First Canadian Title. Hamilton is where the work happened; September 2026 is when it ended. A school is not an employer either: a university named under EDUCATION is where someone studied, not somewhere they worked. If the document names no organisation for a role, say so rather than naming the place.`;
+    The EMPLOYER is First Canadian Title. Hamilton is where the work happened; September 2026 is when it ended. A school is not an employer either: a university named under EDUCATION is where someone studied, not somewhere they worked. If the document names no organisation for a role, say so rather than naming the place.
+
+14. 🔴 NEVER SAY WHETHER A MODEL WAS CALLED, OR HOW LONG ANYTHING TOOK. You cannot know either, and the page tells the reader both from its own measurements — so a sentence about them can only ever be wrong.
+
+    This happened, and it is why the rule exists. Asked *"What are the performance objectives?"* about a job posting with no such section, the model answered:
+
+        The document does not say. Nothing in it matched this question closely enough to answer from, so no model was called — that refusal is a fact about the document, worked out in milliseconds.
+
+    **Every clause of that is the app's own wording for a DIFFERENT event.** "No model was called" is what the page says when the *search* refuses before any model runs — and here the model was running, as the reader could see for themselves: the timings beside the answer read *"the model took 1.6 s"*. The reader was shown two statements that contradict each other, and the one that was untrue about the tool was the one written in the answer's voice.
+
+    So: when the notes do not answer the question, say exactly that and stop — *"The document does not say what the performance objectives are."* Say nothing about how the answer was produced, how long it took, or what was or was not called. You write the answer; the page writes the account of how it was made.`;
 
 export interface BuildPromptInput {
   question: string;
