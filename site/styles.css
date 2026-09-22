@@ -3,8 +3,13 @@
 
    Dark, because a document is read for a while and a bright page is tiring, and
    because the answer panels are easier to pick out of a dark field than out of a
-   white one. One accent colour, used for one thing at a time: what you are meant
-   to look at next.
+   white one. **Two accents now, each with one job** — George asked for the answer to stand out on
+   22 Sep 2026 (*"i want the answer highlighted a bit better … maybe a new color or hue"*):
+   **teal (~172°) is everything the page says** — the interface, the charts, the captions, and the
+   citation chips that mark what was counted in code — and **indigo (~258°) is the answer the model
+   wrote**, used on that one panel and nowhere else. The rule at the top of this file used to read
+   "one accent colour, used for one thing at a time", and this replaces it rather than quietly
+   contradicting it.
 
    Teal, not purple. The palette below is the same structure it always had — one
    very dark ground, three panel steps, one accent and one strong accent — with the
@@ -448,16 +453,32 @@ input:focus { border-color: var(--accent-2); }
 /* ---------- answer ---------- */
 
 .answer-wrap { margin: 0 0 18px; }
+/* 🔴 THE ANSWER WEARS THE ONE HUE THAT IS NOT TEAL, AND THAT IS THE POINT.
+   George, 22 Sep 2026, verbatim: *"i want the answer highlighted a bit better … maybe a new color or
+   hue"*. Everything else on this page is teal, so a teal answer panel was competing with the charts
+   and the captions it is supposed to sit above — the reader's eye had nothing to catch on. The
+   answer now wears **indigo (~258° against the page's teal 172°)**, and the rule is simple enough to
+   keep: **teal is what the page says, indigo is what the model wrote.** Nothing that was counted in
+   code changes hue, so the one panel on the screen that is a generated answer is also the only panel
+   that does not look like the page's own furniture.
+   ⚠ Worth knowing, and kept in mind rather than ignored: 258° is the hue this whole palette USED to
+   be before it was moved to teal (see the note at the top of this file). That move is untouched —
+   every hand-written purple was taken to teal and stays there. This is a deliberate second accent
+   with exactly one job, and it is the only place in the sheet where this family appears.
+   The glow is soft on purpose: a bright halo on a dark page reads as an error state. */
 .answer {
-  background: linear-gradient(180deg, #0d2a30, #081a1e);
-  border: 1px solid var(--line-2);
-  border-left: 3px solid var(--accent);
+  background: linear-gradient(180deg, #1a1b3c, #0b0d1e);
+  border: 1px solid #2c2c58;
+  border-left: 4px solid #a78bfa;
   border-radius: 12px;
   padding: 18px 20px;
+  box-shadow: 0 10px 30px rgba(124, 92, 245, 0.12);
 }
-.answer .q { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
-.answer .q b { color: var(--ink-2); }
-.answer .prose { font-size: 17px; line-height: 1.72; white-space: pre-wrap; }
+/* The reader's own words are not decoration — they stay legible on the indigo ground rather than
+   fading into it, in a cool grey that belongs to this hue instead of the page's teal one. */
+.answer .q { font-size: 13px; color: #c3c4dc; margin: 0 0 10px; }
+.answer .q b { color: #c9c6ff; }
+.answer .prose { font-size: 17.5px; line-height: 1.72; white-space: pre-wrap; color: #f4f2ff; }
 .answer .prose .cite {
   font-family: var(--mono);
   font-size: 12px;
