@@ -206,6 +206,22 @@ test('a document can be pasted and indexed, and the charts draw', async (t) => {
   const naming = await page.locator('#suggestions-hint').innerText();
   assert.match(naming, /^This looks like\s+\S/, `the line naming the document reads "${naming}"`);
   assert.doesNotMatch(naming, /try one of these/i, 'the tail came back on the line that names the document');
+  assert.doesNotMatch(naming, /\.\s*$/, `the line that names the document ends in a full stop: "${naming}"`);
+
+  // 🔴 THE ROOM ABOVE THE LINE MATCHES THE ROOM BELOW IT. George, 22 Sep 2026: *"add vertical smap
+  // above same as what is on bottom"*. Measured, not declared — the heading's own bottom margin and
+  // the line box's leading are both inside the distance the reader sees, so the assertion is on the
+  // two distances rather than on the two CSS values.
+  const room = await page.evaluate(() => {
+    const head = document.querySelector('#step-2 .step-head').getBoundingClientRect();
+    const line = document.getElementById('suggestions-hint-row').getBoundingClientRect();
+    const hint = document.querySelector('#step-2 > p.hint').getBoundingClientRect();
+    return { above: Math.round(line.top - head.bottom), below: Math.round(hint.top - line.bottom) };
+  });
+  assert.ok(
+    Math.abs(room.above - room.below) <= 2,
+    `the line naming the document has ${room.above}px above it and ${room.below}px below it`
+  );
 
   // A canvas that was never drawn has zero painted pixels; one that was drawn does not.
   const painted = await page.evaluate(() => {

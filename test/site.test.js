@@ -232,21 +232,24 @@ test('the line naming the document sits under its heading, and the questions sit
   const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
   assert.match(
     app,
-    /`This looks like <b class="kind-badge">\$\{esc\(kindLabel\)\}<\/b>\.`/,
-    'the line naming the document no longer ends where it should — it either lost its full stop or grew a tail'
+    /`This looks like <b class="kind-badge">\$\{esc\(kindLabel\)\}<\/b>`/,
+    'the line naming the document no longer ends where it should — it has grown a tail or a full stop'
   );
 
   // And the room, which is the other half of what he asked for.
   const css = site('styles.css');
-  const line = /\.suggest-hint \{ margin: (\d+)px 0 (\d+)px;/.exec(css);
+  const line = /\.suggest-hint \{ margin: (\d+)(px 0 (\d+)px)?;/.exec(css);
+  const row = /#suggestions-hint-row \{ margin-top: (\d+)px; \}/.exec(css);
   const buttons = /#suggestions \{ margin-top: (\d+)px; margin-bottom: (\d+)px; \}/.exec(css);
-  assert.ok(line, 'nothing states the room above and below the line naming the document');
+  assert.ok(line, 'nothing states the line naming the document');
+  assert.ok(row, 'nothing states the room above it');
   assert.ok(buttons, 'nothing states the room around the question buttons');
-  assert.ok(Number(line[2]) >= 10, `the line has only ${line[2]}px below it`);
-  // It is a subtitle of the heading above it, so its own top margin stays small — the heading's 6px
-  // and its row's 8px are what separate the two. A big number here would push the line away from the
-  // heading it was just put back under, which is the fault this whole correction was about.
-  assert.ok(Number(line[1]) <= 6, `the line has ${line[1]}px above it, which pushes it off its heading`);
+  // It is a label under the heading, not a floating block: real air on both sides, neither welded to
+  // the heading above nor to the sentence below. THE EQUALITY OF THE TWO DISTANCES IS MEASURED IN
+  // test/e2e.test.js instead — the heading's own margin collapses into the row's and the room below
+  // comes from the `.row + p.hint` rule, so a static assertion on these numbers would be a claim
+  // about arithmetic rather than about the page.
+  assert.ok(Number(row[1]) >= 12, `the line has only ${row[1]}px above it, which welds it to the heading`);
   assert.ok(Number(buttons[1]) >= 16, `the questions have only ${buttons[1]}px above them`);
   assert.ok(Number(buttons[2]) >= 20, `the questions have only ${buttons[2]}px below them`);
 });

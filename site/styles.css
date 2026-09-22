@@ -253,9 +253,21 @@ textarea#paste::placeholder { color: #4d7a7f; }
    proper vertical spacing"*. Measured before any of it: 10px above the line and 0px below, so the
    one thing on the page that shows the document was understood read as a caption welded to the
    sentence underneath it. The room sits on the LINE rather than on its row, so when there is no
-   guess to show the margin leaves with it (`:empty` below). Above it: the heading's own 6px, the
-   row's 8px, and these 2px — 16px in all, which is what "proper" meant here. */
-.suggest-hint { margin: 2px 0 14px; font-size: 13.5px; color: var(--muted, #8b93a7); }
+   guess to show the margin leaves with it (`:empty` below).
+   🔴 AND THE ROOM ABOVE IT MATCHES THE ROOM BELOW IT — George, 22 Sep 2026: *"add vertical smap
+   above same as what is on bottom"*. Both are 16px, measured in the browser. 🔴 NEITHER NUMBER IS ON
+   THE LINE, and that is not a preference — it is where the page will actually pay attention:
+     · ABOVE is `#suggestions-hint-row { margin-top: 16px }`, because the heading's 6px bottom margin
+       and a row's top margin COLLAPSE, so the gap the reader sees is the larger of the two and a
+       margin on the inner `p` would sit inside the row's box and change nothing above it.
+     · BELOW is the `.row + p.hint` rule further up, which gives the sentence that follows this row
+       16px of its own — so the line carries no bottom margin and the two gaps come out equal.
+   Both were measured, not derived: 16px above the line, 16px below it. Guarded in test/e2e.test.js.
+   One honest edge: if the server ever sends no guess, the line is empty and the 16px above it is
+   spent on nothing — cosmetic, and the panel is only revealed by the response that carries it. */
+.suggest-hint { margin: 0; font-size: 13.5px; color: var(--muted, #8b93a7); }
+.suggest-hint:empty { display: none; }
+#suggestions-hint-row { margin-top: 16px; }
 .suggest-hint:empty { display: none; }
 
 /* 🔴 THE QUESTION BUTTONS FOLLOW THE BOX THE READER ASKS IN, AND THEY GET AIR TOO — 24px above them
