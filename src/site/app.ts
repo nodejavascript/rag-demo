@@ -1335,13 +1335,17 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
 
   el.shapeCards.innerHTML = [
     card('Entries', stats.entries.toLocaleString(), 'blocks of the document'),
-    card('Notes', stats.chunks.toLocaleString(), 'what gets searched'),
-    card('Words', stats.words.toLocaleString(), `${stats.characters.toLocaleString()} characters`),
+    // 🔴 CARD 4 ABOVE CARD 2 — George, 22 Sep 2026, verbatim: *"put card 4 above card 2 that is
+    // all"*. "Full dates" now sits directly under "Entries", where it reads as the next thing the
+    // reader wants to know about the blocks that were taken in: how many of them carry a real date.
+    // Nothing else about the row changed; the cards are the same six in the same words.
     card(
       'Full dates',
       `${stats.datedEntries.toLocaleString()}`,
       stats.datedEntries === 1 ? 'entry with a day, month and year' : 'entries with a day, month and year'
     ),
+    card('Notes', stats.chunks.toLocaleString(), 'what gets searched'),
+    card('Words', stats.words.toLocaleString(), `${stats.characters.toLocaleString()} characters`),
     card(
       'Placeable',
       `${(stats.datedEntries + stats.monthPrecision).toLocaleString()}`,
