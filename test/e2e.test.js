@@ -1386,3 +1386,101 @@ test('indexing the same text twice changes nothing on the page', async (t) => {
   // And the page says what happened rather than looking broken: the reuse is a fact about the run.
   assert.match(secondRun.note, /already indexed|nothing to do/i, `the reused run must say so — got "${secondRun.note}"`);
 });
+
+/**
+ * 🔴 THE LABEL INSIDE A BAR IS CENTRED ON THE BAR, NOT SITTING LOW IN IT.
+ *
+ * George, 22 Sep 2026, on the chart that says how the answer was built: *"the text in the bars is at
+ * baseline, can the bars be thinker to accomodate centering the text vertically?"*. He was looking at
+ * two faults: the bar was drawn from `y + 1` with a height of `rowH - 8`, while its label was drawn at
+ * the centre of the ROW (`y + rowH / 2`) — so every label sat three pixels low, which reads as sitting
+ * on the baseline — and an 8-pixel gap between rows made the bars thin.
+ *
+ * Measured rather than assumed: the vertical centre of the DARK ink (the labels are `#04221f` and
+ * nothing else on this canvas is that dark) is compared with the vertical centre of the bar ink. If
+ * the labels are centred in their bars the two are the same line; with the old geometry the labels sat
+ * about three pixels below it, which is what this is here to catch.
+ */
+test('the label in the answer chart is centred on the bar it belongs to', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+
+  await paste(await diary());
+  await page.evaluate(() => document.getElementById('index').click());
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+  await page.fill('#question', 'What did Andrea bring?');
+  await page.evaluate(() => document.getElementById('ask').click());
+  await page.waitForFunction(
+    () => !document.getElementById('answer-wrap').hidden && document.getElementById('answer-prose').innerText.length > 0,
+    null,
+    { timeout: 180000 }
+  );
+  await page.waitForFunction(() => document.getElementById('ask-chart').dataset.rows === '3', null, { timeout: 60000 });
+
+  const measured = await page.evaluate(() => {
+    const canvas = document.getElementById('ask-chart');
+    const ctx = canvas.getContext('2d');
+    const { width, height } = canvas;
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    // ⚠️ MEASURED PER ROW, AND THE FIRST VERSION OF THIS TEST WAS NOT. It compared the centre of ALL
+    // the dark ink with the centre of ALL the bar ink — which is the right comparison only if every
+    // bar carries a label, and on this chart most do not: a short search bar writes its name BESIDE
+    // the bar in grey, so only the longest row holds its label inside. The first run found 34 label
+    // pixels in one row and compared them against three rows of bars, which measures nothing. So the
+    // labels are grouped into rows by their own y, and each row is judged on its own.
+    // The label inside a bar is #04221f; the axis is #1b434b (its blue is 75, past this test).
+    const isLabel = (at) => pixels[at] < 70 && pixels[at + 1] < 70 && pixels[at + 2] < 70 && pixels[at + 3] > 0;
+    const rows = [];
+    const inkAt = new Map();
+    for (let y = 0; y < height; y += 1) {
+      let labels = 0;
+      let ink = 0;
+      for (let x = 0; x < width; x += 1) {
+        const at = (y * width + x) * 4;
+        if (pixels[at + 3] === 0) continue;
+        ink += 1;
+        if (isLabel(at)) labels += 1;
+      }
+      if (ink > 0) inkAt.set(y, ink);
+      if (labels > 0) rows.push({ y, labels });
+    }
+    // Group the labelled pixel-rows into runs, and give each run the bar ink in the same band.
+    const bands = [];
+    let run = null;
+    for (const row of rows) {
+      if (run && row.y === run.last + 1) {
+        run.last = row.y;
+        run.labels += row.labels;
+      } else {
+        if (run) bands.push(run);
+        run = { first: row.y, last: row.y, labels: row.labels };
+      }
+    }
+    if (run) bands.push(run);
+    return {
+      bands: bands.map((band) => {
+        const centre = (band.first + band.last) / 2;
+        // The bar's own extent, taken from the ink rows that touch this band and continue outwards.
+        let top = band.first;
+        let bottom = band.last;
+        while (top - 1 >= 0 && (inkAt.get(top - 1) ?? 0) > 0) top -= 1;
+        while (bottom + 1 < height && (inkAt.get(bottom + 1) ?? 0) > 0) bottom += 1;
+        const barCentre = (top + bottom) / 2;
+        return { labelCentre: centre, barCentre, offBy: Math.abs(centre - barCentre), labels: band.labels };
+      }),
+      size: `${width}x${height}`,
+    };
+  });
+
+  assert.ok(measured.bands.length > 0, 'the chart must draw at least one label inside a bar');
+  assert.ok(
+    measured.bands.reduce((most, band) => Math.max(most, band.labels), 0) > 20,
+    `the labels must be drawn — largest run had ${Math.max(...measured.bands.map((band) => band.labels))} pixels`
+  );
+  const worst = measured.bands.reduce((most, band) => Math.max(most, band.offBy), 0);
+  assert.ok(
+    worst < 1.5,
+    `a label sits ${worst.toFixed(1)}px from the centre of its bar, on a ${measured.size} canvas — ` +
+      `${JSON.stringify(measured.bands)}`
+  );
+});

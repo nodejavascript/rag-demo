@@ -311,6 +311,16 @@ function drawAskStages(canvas: HTMLCanvasElement, stages: AskStage[], nowMs: num
   canvas.dataset.rows = String(stages.length);
   const axisY = h - pad.bottom;
   const rowH = Math.min(30, Math.max(11, (axisY - pad.top - 4) / rows));
+  // 🔴 THE BAR IS THICK ENOUGH TO HOLD ITS OWN LABEL, AND THE LABEL IS CENTRED ON THE BAR.
+  // George, 22 Sep 2026, on the chart that says how the answer was built: *"the text in the bars is at
+  // baseline, can the bars be thinker to accomodate centering the text vertically?"*. Two faults, and
+  // the second was mine: the bar was drawn from `y + 1` with a height of `rowH - 8`, while the label
+  // was drawn at the ROW's centre (`y + rowH / 2`, baseline 'middle'). The bar's own centre is
+  // `y + 1 + barH / 2`, which is 3px higher — so every label sat three pixels low inside its bar,
+  // which reads exactly as "on the baseline". The gap is now 4px instead of 8 (thicker bars), and the
+  // label is placed at the centre of the bar it belongs to rather than the centre of the row.
+  const barH = Math.max(10, rowH - 4);
+  const barCentre = (y: number): number => y + 1 + barH / 2;
 
   // The x scale is milliseconds, and it stretches as the slowest stage grows: a search of 40 ms
   // beside a model call of four seconds must not crush the search to nothing.
@@ -335,7 +345,6 @@ function drawAskStages(canvas: HTMLCanvasElement, stages: AskStage[], nowMs: num
     const startedAt = stage.tookMs === undefined ? stage.ms : stage.ms - stage.tookMs;
     const endedAt = stage.tookMs === undefined ? nowMs : stage.ms;
     const y = pad.top + at * rowH;
-    const barH = Math.max(6, rowH - 8);
     const from = x(startedAt);
     const width = Math.max(2, x(endedAt) - from);
 
@@ -371,12 +380,12 @@ function drawAskStages(canvas: HTMLCanvasElement, stages: AskStage[], nowMs: num
       // number, provided the pair fits. Measured on the live chart 20 Sep 2026: the model's row drew
       // **2789 ms** and nothing else, and a number with no noun is not a chart.
       if (ctx.measureText(together).width <= width - 12) {
-        ctx.fillText(together, from + 6, y + rowH / 2);
+        ctx.fillText(together, from + 6, barCentre(y));
       } else {
-        ctx.fillText(shortenToFit(ctx, timing, Math.max(24, width - 12)), from + 6, y + rowH / 2);
+        ctx.fillText(shortenToFit(ctx, timing, Math.max(24, width - 12)), from + 6, barCentre(y));
         if (room > ctx.measureText(word).width + 8) {
           ctx.fillStyle = '#7ba1a8';
-          ctx.fillText(word, from + width + 5, y + rowH / 2);
+          ctx.fillText(word, from + width + 5, barCentre(y));
         }
       }
     } else {
@@ -384,7 +393,7 @@ function drawAskStages(canvas: HTMLCanvasElement, stages: AskStage[], nowMs: num
       ctx.fillText(
         shortenToFit(ctx, word, Math.max(24, room)),
         from + width + 5,
-        y + rowH / 2
+        barCentre(y)
       );
     }
     ctx.textBaseline = 'alphabetic';
