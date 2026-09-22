@@ -111,14 +111,20 @@ test('and it says why it is unavailable rather than being absent', () => {
 });
 
 test('each step is numbered for what it holds', () => {
-  // 🔴 AS OF 22 SEP 2026 THE PANELS SWAPPED PLACES, AND THE NUMBERS WENT WITH THEM. George:
-  // *"put ## Ask it something above ## What it read. i want them to see what it thinks the document
-  // is."* So the panel that asks is step 2 and the panel that shows the reading is step 3 — the id,
-  // the badge and the position all say the same thing. An `id="step-2"` on a panel whose badge
-  // reads 3 is exactly the kind of name that lies, which is what this suite exists to prevent.
+  // 🔴 MOVED AGAIN ON 22 SEP 2026, AND THE IDS FINALLY STOPPED MEANING "POSITION". George:
+  // *"after something is indexed the ask it something card opens. i want the ## It goes away on its
+  // own card to be on top of the ## Ask it something card"*. So the order is now
+  // step-1 · "It goes away on its own" · "Ask it something" · "What it read", and the BADGES were
+  // renumbered 2 · 3 · 4 so the reader still counts 1 · 2 · 3 · 4.
+  // The ids did NOT move with them: `step-2`, `step-3` and `step-4` are what the page's script
+  // reveals by, so `step-4` is now the second panel on screen. That is exactly the name that lies,
+  // so this guard no longer asserts id-to-badge — which is now impossible — and asserts the two
+  // things that must still be true: each badge sits on the panel whose purpose it names, and the
+  // visible order is the one he asked for.
   const html = site('index.html');
-  assert.match(step(html, 'step-2'), /<div class="step-n">2<\/div><h2>Ask it something<\/h2>/, 'step 2 is not the panel that asks');
-  assert.match(step(html, 'step-3'), /<div class="step-n">3<\/div><h2>What it read<\/h2>/, 'step 3 is not the panel that shows the reading');
+  assert.match(step(html, 'step-4'), /<div class="step-n">2<\/div><h2>It goes away on its own<\/h2>/, 'the badge that reads 2 is not on the panel that says the text goes away');
+  assert.match(step(html, 'step-2'), /<div class="step-n">3<\/div><h2>Ask it something<\/h2>/, 'the badge that reads 3 is not on the panel that asks');
+  assert.match(step(html, 'step-3'), /<div class="step-n">4<\/div><h2>What it read<\/h2>/, 'the badge that reads 4 is not on the panel that shows the reading');
   assert.doesNotMatch(
     html,
     /<h2>Index it<\/h2>/,
@@ -126,16 +132,18 @@ test('each step is numbered for what it holds', () => {
   );
 });
 
-test('and the ask panel comes BEFORE the panel that shows the reading', () => {
+test('and the panels stand in the order George asked for', () => {
   // The change itself, asserted as order in the shipped markup — because order is what he asked for.
   const html = site('index.html');
+  const at = (id) => html.indexOf(`id="${id}"`);
+  assert.ok(at('step-1') < at('step-4'), 'the panel that says the text goes away must sit under the box, not above it');
   assert.ok(
-    html.indexOf('id="step-2"') < html.indexOf('id="step-3"'),
-    'the reading panel is above the ask panel again'
+    at('step-4') < at('step-2'),
+    '"It goes away on its own" is below "Ask it something" again — the move of 22 Sep 2026 is undone'
   );
   assert.ok(
-    html.indexOf('id="step-3"') < html.indexOf('id="step-4"'),
-    'and the reading panel must still come before the delete panel'
+    at('step-2') < at('step-3'),
+    'the reading panel is above the ask panel again'
   );
 });
 
