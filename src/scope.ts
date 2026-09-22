@@ -118,6 +118,33 @@ function normalise(question: string): string {
 }
 
 /**
+ * The words that ask about the document's OWN span — when it starts, when it ends, how long it covers.
+ *
+ * 🔴 WHY THIS IS HERE AND NOT IN THE REGISTRIES. George's page offers *"What date range does it cover?"*
+ * on a statement, and on a statement of accounts that question was **refused in 0.3 s** — *"Nothing in
+ * this document matched the question closely enough"* — while the document opened with *"1 January
+ * 2026 to 31 March 2026"* and **the answer had already been computed in code** (`factsFor` pushes a
+ * `date-range` fact for every dated document, always). The refusal is decided by similarity, and a
+ * question about the document's own span has very little in common with the words in it, so the one
+ * thing the program already knows for certain was thrown away in favour of a cosine.
+ *
+ * So this is not a reading of the question that changes which notes are used — the whole-document path
+ * does that. It is the test for "the answer is in the facts, not in the notes", and it exists so the
+ * refusal cannot overrule a fact that was counted over the whole document.
+ */
+export function asksForTheDateRange(question: string): boolean {
+  const asked = normalise(question);
+  return (
+    /\bdate range\b/.test(asked) ||
+    /\bwhat (?:period|dates?|years?)\b/.test(asked) ||
+    /\bfrom (?:when|what date)\b/.test(asked) ||
+    /\bwhen does it (?:start|begin|end|finish|run)\b/.test(asked) ||
+    /\bhow long (?:does|is|was)\b/.test(asked) ||
+    /\bhow (?:far|much time) (?:apart|between)\b/.test(asked)
+  );
+}
+
+/**
  * True when the question asks for everything the document holds.
  *
  * Order matters, and it is: the exact registries first (a decision already made), then the one-off

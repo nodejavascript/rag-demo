@@ -233,6 +233,26 @@ test('a document can be pasted and indexed, and the charts draw', async (t) => {
   });
   assert.equal(painted, true, 'the timeline chart must actually be drawn');
   await assertNothingStretched('right after indexing');
+
+  // 🔴 THE NOTE MAP IS DRAWN, IN A REAL BROWSER, ON A DOCUMENT THAT WAS REALLY INDEXED. It is the chart
+  // that shows what the search has to work with — one cell per note — and it is the child of a fault
+  // this session found twice: a statement that was ONE note, and a resume question answered from eight
+  // of twenty. A canvas that was never painted has no pixels, and a caption that never arrived leaves
+  // the line empty; both are asserted here rather than assumed from the source.
+  const noteMap = await page.evaluate(() => {
+    const canvas = document.getElementById('note-map');
+    const box = document.getElementById('notes-box');
+    if (!canvas || !box) return { missing: true };
+    const context = canvas.getContext('2d');
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let ink = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) ink += 1;
+    return { hidden: box.hidden, ink, caption: document.getElementById('note-map-note').textContent };
+  });
+  assert.equal(noteMap.missing, undefined, 'the note map is not on the page at all');
+  assert.equal(noteMap.hidden, false, 'the note map is hidden on an indexed document');
+  assert.ok(noteMap.ink > 200, `the note map was not drawn (${noteMap.ink} pixels of ink)`);
+  assert.match(noteMap.caption, /note/, 'the note map has no caption');
 });
 
 test('a question gets an answer with its details and sources', async (t) => {

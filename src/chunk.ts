@@ -24,6 +24,33 @@ import type { Chunk, Entry, ImageRef, IndexStats, Mention, NoteMeta } from './ty
 export const CHUNK_WORDS = 220;
 export const CHUNK_OVERLAP = 40;
 
+/**
+ * A document that arrived as ONE solid run of many short lines is a list of records, and it is split.
+ *
+ * 🔴 WHY, MEASURED. A statement of accounts — one line per transaction, the shape every bank exports —
+ * came out as **one entry and one note of about 1,300 characters**. The search then had no granularity
+ * at all, and the refusal floor, which is measured against short notes, called the document silent
+ * about its own contents: three of the four questions the page offers on a statement were answered
+ * *"Nothing in this document matched the question closely enough"* in 0.2 seconds, and one of them
+ * (*"What date range does it cover?"*) stayed refused even after that, on a document that opens with
+ * *"1 January 2026 to 31 March 2026"*. Found by `tools/judge-answers.mjs` on 22 Sep 2026.
+ *
+ * ⚠️ **THE FRAGMENT GUARD IS NOT BEING UNDONE.** A document of short standalone lines separated by
+ * BLANK lines stays one entry — that rule exists because relaxing it once turned such a document into
+ * four entries with three empty bodies. This splits only a **run** of at least 12 consecutive
+ * non-blank lines, wherever that run sits, and every piece it makes is non-empty by construction.
+ *
+ * 🔴 AND THE FIRST VERSION OF IT WAS TOO NARROW, WHICH THE HARNESS CAUGHT THE SAME HOUR. It fired only
+ * when the WHOLE document was one block with no blank line anywhere — and the statement in
+ * `tools/judge-answers.mjs` has a blank line after its opening paragraph, so nothing split and the
+ * document was still one note. Real statements have section breaks AND a solid run of transactions.
+ * So the rule is about the RUN, not about the document.
+ */
+export const LINE_RUN_MIN_LINES = 12;
+
+/** How many lines go into one group — about ten records, which is a note a reader can recognise. */
+export const LINE_RUN_GROUP_LINES = 10;
+
 export interface Built {
   entries: Entry[];
   chunks: Chunk[];
@@ -196,7 +223,9 @@ export function build(text: string, yearHint: number | null, imagesIn: ImageRef[
   });
   if (current) rawEntries.push(finish(current));
 
-  const entries: Entry[] = rawEntries.map((entry, index) => {
+  const splitEntries = splitLineRun(rawEntries);
+
+  const entries: Entry[] = splitEntries.map((entry, index) => {
     const body = entry.text || entry.heading || '';
     const hit = entryDate(body, year);
     return {
@@ -302,6 +331,122 @@ export function build(text: string, yearHint: number | null, imagesIn: ImageRef[
       entries.flatMap((entry) => findAmounts(entry.text).map((value) => ({ value, entryIndex: entry.index })))
     ),
   };
+}
+
+/**
+ * Split one solid run of many short lines into groups of lines — see `LINE_RUN_MIN_LINES`.
+ *
+ * The offsets matter and are computed rather than assumed: each group has to point at the exact slice
+ * of the ORIGINAL text it came from, because `start` and `end` are what the page uses to place an
+ * entry against the document. Each search starts where the previous one ended, so the groups can only
+ * move forwards.
+ */
+function splitLineRun<Row extends { heading: string | null; text: string; start: number; end: number }>(
+  raw: Row[]
+): Row[] {
+  const out: Row[] = [];
+  for (const entry of raw) {
+    const pieces = splitRuns(entry.text);
+    if (pieces.length === 1) {
+      out.push(entry);
+      continue;
+    }
+    // Each piece points at the exact slice of the ORIGINAL text it came from — `start` and `end` are
+    // what the page uses to place a note against the document — and the search for each one starts
+    // where the previous ended, so the pieces can only move forwards.
+    let cursor = 0;
+    pieces.forEach((piece, at) => {
+      const found = entry.text.indexOf(piece, cursor);
+      const start = found === -1 ? entry.start : entry.start + found;
+      cursor = (found === -1 ? cursor : found) + piece.length;
+      out.push({
+        // The heading belongs to the top of the entry and is not repeated on every piece: a label
+        // that says the same thing on ten notes tells the reader nothing.
+        heading: at === 0 ? entry.heading : null,
+        text: piece,
+        start,
+        end: start + piece.length,
+      } as Row);
+    });
+  }
+  return out;
+}
+
+/**
+ * Break a note's text into pieces: every run of at least `LINE_RUN_MIN_LINES` consecutive non-blank
+ * lines is cut into groups of `LINE_RUN_GROUP_LINES`, and everything else is left exactly as written.
+ *
+ * Returns ONE piece — the text unchanged — when there is no such run, which is the case for every
+ * entry of a diary or a resume, and for a list of fragments separated by blank lines.
+ */
+function splitRuns(text: string): string[] {
+  // Every row with its own offsets into the ORIGINAL text; the pieces are SPANS of that text rather
+  // than strings rebuilt from pieces, which is what turns "nothing is lost" into a property instead of
+  // a hope. Three versions of this function failed their own check and refused to split, and each one
+  // was right to: the first dropped the newline at every join, the second dropped the blank lines
+  // between runs, and the third split a diary in two at every blank line — because it treated EVERY
+  // run as a cut point instead of only a run long enough to be a record list.
+  const rows: { start: number; end: number; blank: boolean }[] = [];
+  let at = 0;
+  for (const line of text.split('\n')) {
+    rows.push({ start: at, end: at + line.length, blank: line.trim().length === 0 });
+    at += line.length + 1; // the newline that followed it
+  }
+
+  // `end` is exclusive, and `+ 1` takes the newline that ended the row. `cutAfter` marks the only place
+  // a note is allowed to end.
+  const units: { start: number; end: number; cutAfter: boolean }[] = [];
+  const add = (from: number, to: number, cutAfter: boolean): void => {
+    units.push({ start: from, end: Math.min(text.length, to + 1), cutAfter });
+  };
+
+  let run: { start: number; end: number }[] = [];
+  const flush = (): void => {
+    if (run.length === 0) return;
+    const first = run[0] as { start: number };
+    const last = run[run.length - 1] as { end: number };
+    if (run.length < LINE_RUN_MIN_LINES) {
+      // Too short to be a record list, so it is one unit and NEVER a cut point: two short paragraphs
+      // either side of a blank line stay one note, exactly as they always were.
+      add(first.start, last.end, false);
+    } else {
+      // Balanced groups rather than ten-and-a-tail: a fourteen-line run becomes 7 and 7.
+      const groups = Math.ceil(run.length / LINE_RUN_GROUP_LINES);
+      const per = Math.ceil(run.length / groups);
+      for (let cut = 0; cut < run.length; cut += per) {
+        const group = run.slice(cut, cut + per);
+        add((group[0] as { start: number }).start, (group[group.length - 1] as { end: number }).end, true);
+      }
+    }
+    run = [];
+  };
+
+  for (const row of rows) {
+    if (row.blank) {
+      flush();
+      // The blank line belongs to the unit before it, so the spans still cover the whole text.
+      const previous = units[units.length - 1];
+      if (previous) previous.end = Math.min(text.length, row.end + 1);
+      continue;
+    }
+    run.push({ start: row.start, end: row.end });
+  }
+  flush();
+
+  if (!units.some((unit) => unit.cutAfter)) return [text];
+
+  const pieces: string[] = [];
+  let from = 0;
+  for (const unit of units) {
+    if (!unit.cutAfter) continue;
+    pieces.push(text.slice(from, unit.end));
+    from = unit.end;
+  }
+  if (from < text.length) pieces.push(text.slice(from));
+  if (pieces.length <= 1) return [text];
+  // 🔴 SPLITTING A DOCUMENT ONCE LOST MOST OF IT, so this checks its own work and refuses to change
+  // anything at all if the pieces do not add back up to the text it was given.
+  return pieces.join('') === text ? pieces : [text];
 }
 
 function finish(entry: { heading: string | null; text: string; start: number; end: number }): Entry {

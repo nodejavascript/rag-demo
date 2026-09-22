@@ -493,3 +493,78 @@ export function axisMonths(spans: Spans): number {
   if (from === null || to === null) return 0;
   return Math.max(1, to - from + 1);
 }
+
+/**
+ * THE DOCUMENT, NOTE BY NOTE — one cell per note, its width its share of the text.
+ *
+ * 🔴 WHY THIS CHART EXISTS, AND WHY IT WAS THE ONE MISSING. Every other chart here answers a question
+ * about the document's CONTENT: when its entries happened, who and what they mention, what the answer
+ * rested on. None of them shows the thing the whole program is built out of — the notes — and on
+ * 22 Sep 2026 that gap covered two faults in one afternoon. A statement of accounts came out as **one
+ * note of about 1,300 characters**, so the search had no granularity and the document was refused its
+ * own date range; and on a resume a question the page itself offers was answered from eight of twenty
+ * notes and read as complete. Both are one glance at this chart: a single cell the width of the panel,
+ * or a row of twenty cells. The reader can now see the shape of the reading they paid for.
+ *
+ * The numbers are counted here, in code, over the notes as stored — never by the model — and the
+ * caption is built here too, so the sentence under the chart and the chart cannot disagree about the
+ * same document.
+ */
+export interface NoteMapCell {
+  label: string;
+  words: number;
+  chars: number;
+  /** The share of the document's characters this note holds, 0–1. */
+  share: number;
+}
+
+export interface NoteMap {
+  cells: NoteMapCell[];
+  /** How many notes the document was cut into. */
+  total: number;
+  /** The longest note's share of the document, 0–1. */
+  longest: number;
+  /** The whole document in words, counted by the program. */
+  words: number;
+  /**
+   * True when one note holds more than half of a document that has more than one — a document that was
+   * not really cut up. Measured: a statement of accounts was exactly this, and everything downstream of
+   * it was worse for it.
+   */
+  dominated: boolean;
+  /** The sentence under the chart, built from these counts. */
+  caption: string;
+}
+
+export function buildNoteMap(chunks: { label: string; text: string; words: number }[]): NoteMap {
+  const chars = chunks.map((chunk) => chunk.text.length);
+  const totalChars = chars.reduce((sum, value) => sum + value, 0);
+  const words = chunks.reduce((sum, chunk) => sum + chunk.words, 0);
+  const cells: NoteMapCell[] = chunks.map((chunk, at) => ({
+    label: chunk.label,
+    words: chunk.words,
+    chars: chars[at] as number,
+    share: totalChars === 0 ? 0 : (chars[at] as number) / totalChars,
+  }));
+  const longest = cells.reduce((most, cell) => Math.max(most, cell.share), 0);
+  const percent = Math.round(longest * 100);
+
+  const caption =
+    cells.length === 0
+      ? 'No notes were made from this document.'
+      : cells.length === 1
+        ? `One note, holding all ${words.toLocaleString()} words — searched as one thing, so nothing inside it can be found on its own.`
+        : `${cells.length} notes, in the document's own order, each one's width its length. ` +
+          (percent > 50
+            ? `The longest holds ${percent}% of the document, so most of it is searched as one thing.`
+            : `The longest holds ${percent}% of it.`);
+
+  return {
+    cells,
+    total: cells.length,
+    longest,
+    words,
+    dominated: cells.length > 1 && longest > 0.5,
+    caption,
+  };
+}

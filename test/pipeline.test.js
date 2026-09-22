@@ -578,6 +578,172 @@ test('the shape of the document reaches the model, instead of being thrown away'
   assert.match(partialUser, /the list may be incomplete/, 'the model is not told to admit a partial list');
 });
 
+test('a solid run of many short lines is split into notes, so a statement can be searched', () => {
+  // 🔴 MEASURED, 22 Sep 2026, BY `tools/judge-answers.mjs`. A statement of accounts — one line per
+  // transaction, the shape every bank exports — came out as ONE entry and ONE note of about 1,300
+  // characters. With a single note the search has no granularity, and the refusal floor (measured
+  // against short notes) called the document silent about its own contents: three of the four
+  // questions the page offers on a statement were refused in 0.2 s.
+  const ledger = [
+    'STATEMENT OF ACCOUNTS - 1 January 2026 to 31 March 2026',
+    '03/01/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+    '07/01/2026 DEBIT Hydro One $184.20',
+    '11/01/2026 DEBIT Freshmart Groceries $236.77',
+    '15/01/2026 DEBIT Rogers Wireless $96.35',
+    '22/01/2026 DEBIT Halton Property Tax $512.00',
+    '05/02/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+    '09/02/2026 DEBIT Freshmart Groceries $198.04',
+    '14/02/2026 DEBIT Bell Canada $88.10',
+    '27/02/2026 DEBIT Home Depot $74.99',
+    '06/03/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+    '12/03/2026 DEBIT Hydro One $201.60',
+    '19/03/2026 DEBIT Birchwood Dental $340.00',
+    '28/03/2026 DEBIT Freshmart Groceries $255.31',
+  ].join('\n');
+  const built = build(ledger, null, []);
+  assert.ok(built.entries.length > 1, `a 14-line record list became ${built.entries.length} entry`);
+  assert.ok(built.chunks.length > 1, 'and one note');
+  // 🔴 NOTHING IS LOST AND NOTHING IS DUPLICATED — the property the fragment bug destroyed, asserted
+  // as text rather than as counts. The pieces are SLICES of the document, so they concatenate back to
+  // it exactly; joining with a separator here would have been an assertion about my own test.
+  assert.equal(built.chunks.map((chunk) => chunk.text).join(''), ledger, 'the split lost or repeated part of the document');
+  // Every group has to be usable on its own: a body that is not empty, and a label that is not the
+  // same as every other note's.
+  for (const chunk of built.chunks) assert.ok(chunk.text.trim().length > 0, 'a group came out empty');
+  assert.equal(new Set(built.chunks.map((chunk) => chunk.label)).size, built.chunks.length, 'two notes share a label');
+  // And the note that carries the account's own date range is now a SHORT one, which is what makes the
+  // range findable at all. Before this change that note was the whole statement, about 1,300 characters.
+  const carriesTheRange = built.chunks.filter((chunk) => chunk.text.includes('1 January 2026 to 31 March 2026'));
+  assert.equal(carriesTheRange.length, 1, `the range appears in ${carriesTheRange.length} notes`);
+  assert.ok(
+    carriesTheRange[0].text.length < 500,
+    `the note carrying the range is ${carriesTheRange[0].text.length} characters`
+  );
+});
+
+test('and the same lines with blank lines between them are left alone', () => {
+  // 🔴 THE FRAGMENT GUARD IS NOT BEING UNDONE, and this is the test that says so. A document of short
+  // standalone lines separated by BLANK lines stays one entry: relaxing that rule once turned such a
+  // document into four entries with three empty bodies, and most of the text disappeared. The split
+  // above fires only on a SOLID run.
+  const loose = ['Alpha', '', 'Bravo', '', 'Charlie', '', 'Delta', '', 'Echo', '', 'Foxtrot', '', 'Golf', '', 'Hotel'].join('\n');
+  const built = build(loose, null, []);
+  assert.equal(built.entries.length, 1, 'a fragment list was split into groups');
+  assert.equal(built.chunks.length, 1);
+  assert.match(built.entries[0].text, /Hotel/);
+});
+
+test('and a statement is searched note by note rather than as one lump', async () => {
+  // 🔴 WHY THIS REPLACED A TEST THAT ASSERTED THE REFUSAL WAS GONE. The refusal depends on the
+  // EMBEDDING — whether "what date range does it cover" is close in meaning to "1 January 2026 to 31
+  // March 2026" — and the stub model in this file is a bag of words with no meaning in it at all. The
+  // stub said 0.00 and refused, which says nothing about the real model. So the unit test asserts what
+  // a unit test CAN: that the statement is now several notes, that the one carrying the range is
+  // short, and that the search can therefore reach it. **Whether the real model then answers is
+  // measured against the real model, by `tools/judge-answers.mjs`.**
+  const { store, close } = scratch();
+  try {
+    const model = stubModel();
+    const ledger = [
+      'STATEMENT OF ACCOUNTS - 1 January 2026 to 31 March 2026',
+      '03/01/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+      '07/01/2026 DEBIT Hydro One $184.20',
+      '11/01/2026 DEBIT Freshmart Groceries $236.77',
+      '15/01/2026 DEBIT Rogers Wireless $96.35',
+      '22/01/2026 DEBIT Halton Property Tax $512.00',
+      '05/02/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+      '09/02/2026 DEBIT Freshmart Groceries $198.04',
+      '14/02/2026 DEBIT Bell Canada $88.10',
+      '27/02/2026 DEBIT Home Depot $74.99',
+      '06/03/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+      '12/03/2026 DEBIT Hydro One $201.60',
+      '19/03/2026 DEBIT Birchwood Dental $340.00',
+      '28/03/2026 DEBIT Freshmart Groceries $255.31',
+    ].join('\n');
+    const { document } = await indexDocument(store, model, { text: ledger });
+    const notes = store.allChunks(document.id);
+    assert.ok(notes.length > 1, `the statement is still ${notes.length} note`);
+    const range = notes.find((note) => note.text.includes('1 January 2026 to 31 March 2026'));
+    assert.ok(range, 'the note carrying the range is gone');
+    // It no longer carries the whole statement: this is the property the fix delivers, and it is
+    // stated against the document's own word count rather than against a number picked by hand — a
+    // fourteen-line statement's group is most of the document, and a two-hundred-line one's is not.
+    assert.ok(
+      range.words < document.stats.words,
+      `the note carrying the range is ${range.words} words of the document's ${document.stats.words} — the whole statement again`
+    );
+    // A search for a merchant's name now lands on the notes that hold it, not on everything. Hydro One
+    // is on two lines of this statement, so two notes is CORRECT — what matters is that the keyword
+    // half can reach a merchant at all, and that no note carries the whole statement.
+    const hydro = notes.filter((note) => note.text.includes('Hydro One'));
+    assert.ok(hydro.length >= 1, 'the keyword half cannot reach a merchant');
+    assert.ok(
+      notes.every((note) => note.words < document.stats.words),
+      'a single note still holds the whole statement'
+    );
+    assert.ok(store.lexical(document.id, 'Hydro One', 5).length > 0, 'the keyword half returns nothing for a merchant');
+  } finally {
+    close();
+  }
+});
+
+test('a question about the document\u2019s own date range is not refused, because the range is counted', async () => {
+  // 🔴 MEASURED ON A STATEMENT OF ACCOUNTS, 22 Sep 2026: *"What date range does it cover?"* — one of the
+  // questions the page itself offers on a statement — was refused in 0.3 s with *"Nothing in this
+  // document matched the question closely enough"*, on a document whose first line is *"1 January 2026
+  // to 31 March 2026"*. The range had ALREADY been computed in code (`factsFor` pushes a date-range
+  // fact for every dated document) and the similarity search threw it away.
+  //
+  // The stub model is exactly the right instrument for this test, and unusually so: its bag-of-words
+  // cosine for this question is ZERO, so the search says "silent" every time. If the answer comes back
+  // grounded, it can only be because the computed fact overruled the search.
+  const { store, close } = scratch();
+  try {
+    const seen = [];
+    const model = stubModel();
+    model.chat = async (messages) => {
+      seen.push(messages);
+      return 'WHAT THE DOCUMENT SAYS\nIt covers January to March 2026.\n\nWHAT IT SUGGESTS\nNothing further.';
+    };
+    // 🔴 THE LEDGER, NOT THE DIARY, AND THAT MATTERS. On the diary the search finds a note for this
+    // question and the answer is grounded whatever this rule says — a test that would have passed
+    // with the overrule switched off, which I checked and then replaced. The ledger's notes contain
+    // no word from the question at all (*date*, *range*, *cover* appear nowhere in a statement), so
+    // the search says "silent" and only the computed fact can save it.
+    const ledger = [
+      'STATEMENT OF ACCOUNTS - 1 January 2026 to 31 March 2026',
+      '03/01/2026 DEPOSIT Payroll - Northline Logistics $2,410.55',
+      '07/01/2026 DEBIT Hydro One $184.20',
+      '11/01/2026 DEBIT Freshmart Groceries $236.77',
+      '15/01/2026 DEBIT Rogers Wireless $96.35',
+      '22/01/2026 DEBIT Halton Property Tax $512.00',
+      '19/03/2026 DEBIT Birchwood Dental $340.00',
+    ].join('\n');
+    const { document } = await indexDocument(store, model, { text: ledger });
+    const range = await answer(store, model, document.id, 'What date range does it cover?');
+    assert.notEqual(range.mode, 'refused', 'the range question was refused on a similarity score');
+    assert.equal(seen.length, 1, 'the model was never asked');
+    assert.match(
+      seen[0].map((message) => message.content).join('\n'),
+      /date-range|January|March/i,
+      'the computed range is not in front of the model'
+    );
+    assert.ok(
+      range.computed.some((fact) => fact.kind === 'date-range'),
+      'the computed date range is not part of the answer'
+    );
+
+    // 🔴 AND THE REFUSAL IS STILL A REFUSAL when the facts do not answer the question: a question the
+    // document says nothing about must still cost nothing, which is the rule this one bends. One model
+    // call, not two, means the overrule has not leaked into everything.
+    const nonsense = await answer(store, model, document.id, 'quantum chromodynamics lattice gauge');
+    assert.equal(nonsense.mode, 'refused', 'a question the document cannot answer was sent to the model');
+    assert.equal(seen.length, 1, 'the model was asked about something the facts do not cover');
+  } finally {
+    close();
+  }
+});
+
 test('a lone letter is still dropped, and a lone digit is still kept', () => {
   // Both halves of the rule, because the fix was a loosening and the guard against
   // loosening too far is the reason the original filter existed. A single letter is

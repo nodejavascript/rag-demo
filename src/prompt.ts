@@ -84,7 +84,18 @@ THE RULES
 
 12. 🔴 COPY A PROPER NAME EXACTLY AS IT IS WRITTEN. A school, a company, a person, a place and a product keep the words the document uses — every word of them. Do NOT substitute a more familiar one, do NOT correct one you believe is wrong, do NOT join a name on one line to a place on the line beneath it, and do NOT turn a college into a university.
 
-    This is a real failure and not a caution. A resume wrote St. Clair College on one line and Windsor, Ontario, Canada on the next, and the answer came back as University of Windsor — a school the document never mentions, put in the place of the one it names. If the document names an institution you have never heard of, that IS the answer. If the question asks for something the document does not name, refuse.`;
+    This is a real failure and not a caution. A resume wrote St. Clair College on one line and Windsor, Ontario, Canada on the next, and the answer came back as University of Windsor — a school the document never mentions, put in the place of the one it names. If the document names an institution you have never heard of, that IS the answer. If the question asks for something the document does not name, refuse.
+
+13. 🔴 IN A RESUME, THE EMPLOYER IS THE ORGANISATION, NOT THE TOWN. A role is laid out as TITLE, then the ORGANISATION, then Town, Province, then the dates. Asked where someone worked, name the ORGANISATIONS, and never the towns.
+
+    This is a real failure too, measured on 22 Sep 2026. Asked *"Where has this person worked?"* about a resume naming three employers, the answer was *"Hamilton, Ontario, Windsor, Ontario, University of Windsor."* Every word of that is copied from the document — which is exactly why "it came from the document" is not a standard an answer can be judged by. The question asked where the person WORKED, and the answer never named who they worked for.
+
+    Here is the shape being described, and what each line is:
+
+        Senior Software Engineer, First Canadian Title
+        July 2021 to September 2026, Hamilton, Ontario
+
+    The EMPLOYER is First Canadian Title. Hamilton is where the work happened; September 2026 is when it ended. A school is not an employer either: a university named under EDUCATION is where someone studied, not somewhere they worked. If the document names no organisation for a role, say so rather than naming the place.`;
 
 export interface BuildPromptInput {
   question: string;

@@ -31,7 +31,7 @@ import { Store } from './store.js';
 import { AppError, type DocumentView } from './types.js';
 import { SAMPLES } from './samples.js';
 import { describeDocument } from './kinds.js';
-import { axisMonths, buildSpans, continuousMonths, type Spans } from './charts.js';
+import { axisMonths, buildNoteMap, buildSpans, continuousMonths, type NoteMap, type Spans } from './charts.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '4500', 10);
 const HOST = process.env.HOST ?? '127.0.0.1';
@@ -58,6 +58,8 @@ function describe(store: Store, document: DocumentView): {
   suggestions: string[];
   timeline: { month: string; entries: number }[];
   spans: Spans;
+  /** The document, note by note — the chart of what the search actually has to work with. */
+  noteMap: NoteMap;
   /** How many months the span axis covers — the denominator of every bar's width. */
   spanMonths: number;
 } {
@@ -85,6 +87,11 @@ function describe(store: Store, document: DocumentView): {
     timeline: continuousMonths(document.stats.perMonth, document.stats.firstDate, document.stats.lastDate),
     spans,
     spanMonths: axisMonths(spans),
+    // Built from the notes as stored, in the one place every panel's data is built, so the chart and
+    // its caption cannot disagree with the counts above them.
+    noteMap: buildNoteMap(
+      store.allChunks(document.id).map((chunk) => ({ label: chunk.label, text: chunk.text, words: chunk.words }))
+    ),
   };
 }
 

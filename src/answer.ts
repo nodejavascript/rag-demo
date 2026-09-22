@@ -17,7 +17,7 @@ import { tally } from './enrich.js';
 import { buildFunnel, buildSpine, type Spine } from './charts.js';
 import { buildMessages, isNothingFurther, isRefusal, readShape } from './prompt.js';
 import { retrieve, retrieveEverything, type RetrieveOptions } from './retrieve.js';
-import { wantsEverything } from './scope.js';
+import { asksForTheDateRange, wantsEverything } from './scope.js';
 import { factsFor } from './stats.js';
 import { analyseGaps } from './gaps.js';
 import { analyseConflicts } from './conflicts.js';
@@ -216,15 +216,27 @@ export async function answer(
 
   // Reported before the branch, because the branch is the interesting part: with nothing to answer
   // from, no model is called at all and the reader should see that the wait is already over.
+  //
+  // 🔴 A REFUSAL MUST NOT OVERRULE A FACT COUNTED IN CODE. `factsFor` pushes a `date-range` fact for
+  // every dated document, always — so when the question ASKS for that range, the answer is already in
+  // hand and the similarity search has no business declaring the document silent. Measured on a
+  // statement of accounts, 22 Sep 2026: *"What date range does it cover?"* was refused in 0.3 s, with
+  // *"1 January 2026 to 31 March 2026"* in the first line of the document and the range already
+  // computed. The search's silence is overruled here, and only for a question the facts answer.
+  const docText = entries.map((entry) => entry.text).join('\n\n');
+  const computed = factsFor(question, entries, docText);
+  const answeredByTheFacts = asksForTheDateRange(question) && computed.some((fact) => fact.kind === 'date-range');
+  const silent = retrieval.silent && !answeredByTheFacts;
+
   report({
     stage: 'notes',
     ms: Date.now() - started,
     tookMs: Date.now() - started - retrieval.retrieveMs,
     kept: retrieval.scored.length,
-    silent: retrieval.silent,
+    silent,
   });
 
-  if (retrieval.silent) {
+  if (silent) {
     return {
       question,
       raw: '',
@@ -257,9 +269,6 @@ export async function answer(
       ],
     };
   }
-
-  const docText = entries.map((entry) => entry.text).join('\n\n');
-  const computed = factsFor(question, entries, docText);
 
   const messages = buildMessages({
     question,

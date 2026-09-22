@@ -21,6 +21,7 @@ import {
   axisMonths,
   buildFunnel,
   buildMentionMonths,
+  buildNoteMap,
   buildSpans,
   buildSpine,
   continuousMonths,
@@ -338,4 +339,42 @@ test('the heat map\u2019s rows are ranked by how much the document mentions them
   );
   // And the kind travels with the value, because the grid draws from this list and nothing else.
   assert.deepEqual(rows.map((row) => row.kind), ['place', 'amount', 'person', 'place', 'person']);
+});
+
+test('the note map counts what the search actually has to work with', () => {
+  // 🔴 THE CHART THAT WAS MISSING. Two faults on 22 Sep 2026 were invisible without it: a statement of
+  // accounts that came out as ONE note of about 1,300 characters — nothing inside it could be found on
+  // its own, and the document was refused its own date range — and a resume question answered from
+  // eight notes of twenty. The numbers here are counted in code and the caption is written from them;
+  // the model has no part in either.
+  const notes = [
+    { label: 'a', text: 'x'.repeat(100), words: 10 },
+    { label: 'b', text: 'y'.repeat(300), words: 30 },
+    { label: 'c', text: 'z'.repeat(600), words: 60 },
+  ];
+  const map = buildNoteMap(notes);
+  assert.equal(map.total, 3);
+  assert.equal(map.words, 100);
+  assert.equal(map.cells[1].chars, 300);
+  assert.ok(
+    Math.abs(map.cells.reduce((sum, cell) => sum + cell.share, 0) - 1) < 1e-9,
+    'the shares must add up to one document'
+  );
+  assert.ok(Math.abs(map.cells[2].share - 0.6) < 1e-9, 'the widest cell must be 60% of the strip');
+  assert.equal(map.longest, 0.6);
+  assert.equal(map.dominated, true, 'a note holding most of the document was not flagged');
+  assert.match(map.caption, /3 notes/);
+  assert.match(map.caption, /60% of the document/, 'the caption must say what the chart shows');
+
+  // One note IS the fault this chart exists to expose, so it says so in words rather than drawing a
+  // single bar and leaving the reader to work it out.
+  const one = buildNoteMap([{ label: 'all', text: 'x'.repeat(1300), words: 220 }]);
+  assert.equal(one.total, 1);
+  assert.equal(one.dominated, false, 'a single note is not "dominated" — there is nothing to compare it with');
+  assert.match(one.caption, /One note, holding all 220 words/);
+  assert.match(one.caption, /nothing inside it can be found on its own/);
+
+  // And no notes at all is a failure of the index, not a document with nothing in it.
+  assert.equal(buildNoteMap([]).total, 0);
+  assert.match(buildNoteMap([]).caption, /No notes/);
 });

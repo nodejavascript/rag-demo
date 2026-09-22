@@ -254,6 +254,28 @@ test('the line naming the document sits under its heading, and the questions sit
   assert.ok(Number(buttons[2]) >= 20, `the questions have only ${buttons[2]}px below them`);
 });
 
+test('and the reading panel draws the document note by note', () => {
+  // George asked, 22 Sep 2026: *"if there is new opportunity for new dynamic chart do that too"*. The
+  // opportunity was the one thing no chart showed: the NOTES — what the search actually has to work
+  // with. Two faults that afternoon were invisible without it.
+  const html = site('index.html');
+  const reading = step(html, 'step-3');
+  assert.match(reading, /id="notes-box"/, 'the note-map box is not on the reading panel');
+  assert.match(reading, /canvas id="note-map"/, 'the canvas is missing');
+  assert.match(reading, /id="note-map-note"/, 'the caption line is missing');
+
+  const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
+  assert.match(app, /function drawNoteMap\(/, 'nothing draws the note map');
+  assert.match(app, /painting\(el\.noteMap, \(\) => drawNoteMap\(/, 'the note map is never painted through the shared painter');
+  // 🔴 THE CAPTION IS THE SERVER'S SENTENCE, NOT THE PAGE'S ARITHMETIC. Every count on this page is
+  // counted in code beside the notes it describes; a caption assembled in the browser from a number it
+  // received would be a second place for the same figure to be worked out.
+  assert.match(app, /el\.noteMapNote\.textContent = map\.caption;/, 'the caption is not the one the server wrote');
+  assert.doesNotMatch(app, /noteMapNote\.textContent = `/, 'the page is writing its own caption');
+  // An empty map hides the box: a document with no notes is an index failure, not an empty document.
+  assert.match(app, /map\.total === 0[\s\S]{0,80}el\.notesBox\.hidden = true/);
+});
+
 test('and the reading panel carries the chart of how it was indexed', () => {
   // George, 22 Sep 2026: *"is there a new chart you can use to show how it was index"*. It lives with
   // the other charts on the reading panel — but only when the document carries timings, so an older

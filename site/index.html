@@ -333,6 +333,19 @@ It works best when the document has its own structure: dates on their own line, 
                  the field existed has none, and three zeroes would read as "it took no time".
                  George asked for it, 22 Sep 2026: *"is there a new chart you can use to show how it
                  was index"*. -->
+            <!-- 🔴 THE DOCUMENT, NOTE BY NOTE. The only chart here that shows the thing the whole
+                 program is built out of: the notes, in the document's own order, each one's width its
+                 length. It exists because two faults on 22 Sep 2026 were invisible without it — a
+                 statement of accounts that came out as ONE note of about 1,300 characters (so the
+                 search had nothing to search, and the document was refused its own date range) and a
+                 resume whose question was answered from eight of twenty notes. Both are one glance at
+                 this strip. The counts and the sentence under it are written in code, server-side,
+                 beside the notes they describe — never by the model. -->
+            <div class="chart-box" id="notes-box" hidden>
+              <h3>How it was cut into notes</h3>
+              <p id="note-map-note"></p>
+              <canvas id="note-map" height="72"></canvas>
+            </div>
             <div class="chart-box" id="index-stages-box" hidden>
               <h3>How it was indexed</h3>
               <p id="index-stages-note"></p>

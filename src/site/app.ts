@@ -1009,6 +1009,9 @@ const el = {
   indexStagesBox: $('index-stages-box'),
   indexStages: $<HTMLCanvasElement>('index-stages'),
   indexStagesNote: $('index-stages-note'),
+  notesBox: $('notes-box'),
+  noteMap: $<HTMLCanvasElement>('note-map'),
+  noteMapNote: $('note-map-note'),
   timeline: $<HTMLCanvasElement>('timeline'),
   timelineNote: $('timeline-note'),
   composition: $<HTMLCanvasElement>('composition'),
@@ -1293,7 +1296,22 @@ function spanNote(spans: Spans | undefined, stats: DocumentView['stats']): strin
   return `from ${monthWords(spans.from)}`;
 }
 
-function renderShape(document: DocumentView, timeline: { month: string; entries: number }[] | undefined, spans: Spans | undefined): void {
+/**
+ * The document, note by note — mirrored from `../charts.ts`, which this bundle cannot import because it
+ * compiles on its own (`rootDir: src/site`, the same reason `DocumentView` is hand-kept here). The
+ * server builds it from the notes as stored and sends it with the document, so the chart and its
+ * caption cannot disagree with the counts beside them.
+ */
+interface NoteMap {
+  cells: { label: string; words: number; chars: number; share: number }[];
+  total: number;
+  longest: number;
+  words: number;
+  dominated: boolean;
+  caption: string;
+}
+
+function renderShape(document: DocumentView, timeline: { month: string; entries: number }[] | undefined, spans: Spans | undefined, noteMap: NoteMap | undefined): void {
   const stats = document.stats;
   el.shape.hidden = false;
   el.shapeTitle.innerHTML =
@@ -1376,6 +1394,72 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
   void renderComposition(document);
   renderHeat(document.mentions.byMonth);
   renderIndexStages(document);
+  renderNoteMap(noteMap);
+}
+
+/**
+ * The document, note by note: one cell per note, its width its share of the text.
+ *
+ * 🔴 THIS IS THE CHART THAT SHOWS WHAT THE SEARCH HAS TO WORK WITH, and it was missing on 22 Sep 2026
+ * when two faults hid behind that gap: a statement of accounts that came out as ONE note of about
+ * 1,300 characters — so nothing inside it could be found on its own, and the document was refused its
+ * own date range — and a resume whose question was answered from eight notes of twenty. A single cell
+ * the width of the panel, or a row of twenty, is the whole diagnosis at a glance.
+ *
+ * ⚠ An empty map hides the box rather than drawing an empty axis: a document with no notes is a
+ * failure of the index, not a document with nothing in it, and the two must not look alike.
+ */
+function renderNoteMap(map: NoteMap | undefined): void {
+  if (!map || map.total === 0) {
+    el.notesBox.hidden = true;
+    return;
+  }
+  el.notesBox.hidden = false;
+  el.noteMapNote.textContent = map.caption;
+  painting(el.noteMap, () => drawNoteMap(el.noteMap, map));
+}
+
+/**
+ * One row of cells, in the document's own order, each sized by its share of the text.
+ *
+ * Deliberately flat, like the spine: one row, one unit (the width IS the length), and a caption that
+ * carries the numbers. An axis here would invite a reading the chart does not have.
+ */
+function drawNoteMap(canvas: HTMLCanvasElement, map: NoteMap): void {
+  const surface = fit(canvas);
+  if (!surface) return;
+  const { ctx, w, h } = surface;
+  const pad = { left: 2, right: 2, top: 10, bottom: 22 };
+  const plotW = Math.max(1, w - pad.left - pad.right);
+  const plotH = Math.max(6, h - pad.top - pad.bottom);
+  const gap = map.total > 140 ? 0 : 1.5;
+  const usable = plotW - gap * Math.max(0, map.total - 1);
+
+  let x = pad.left;
+  map.cells.forEach((cell, at) => {
+    const width = Math.max(gap > 0 ? 1.5 : 0.6, cell.share * usable);
+    // The colour says how much of the document the note holds: a light cell is a small note, a hot one
+    // holds most of the document. Same ramp as the bars, so the page has one colour language.
+    ctx.fillStyle = mix(RAMP.low, RAMP.high, Math.min(1, cell.share * 2));
+    ctx.fillRect(x, pad.top, width, plotH);
+    x += width + gap;
+    // Only label a cell with room for its text, and only the biggest few — a label per cell would be
+    // unreadable at twenty notes and absent at two hundred.
+    if (width > 46 && at < 12) {
+      ctx.fillStyle = '#0b1a1a';
+      ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
+      const label = cell.label.length > 12 ? `${cell.label.slice(0, 11)}…` : cell.label;
+      if (ctx.measureText(label).width < width - 6) ctx.fillText(label, x - width + 3, pad.top + plotH - 5);
+    }
+  });
+
+  ctx.fillStyle = '#6f9aa1';
+  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(
+    `one cell per note · ${map.total} ${map.total === 1 ? 'note' : 'notes'} · ${map.words.toLocaleString()} words in all`,
+    pad.left,
+    h - 6
+  );
 }
 
 /**
@@ -1660,6 +1744,7 @@ async function indexNow(): Promise<void> {
       suggestions?: string[];
       timeline?: { month: string; entries: number }[];
       spans?: Spans;
+      noteMap?: NoteMap;
     };
 
     if (!body.document) throw new Error(body.error ?? 'The server sent no index.');
@@ -1671,7 +1756,7 @@ async function indexNow(): Promise<void> {
     // This is the READING — the panel that came back — so it appears when there is something to
     // show, not when enough text has been typed.
     el.stepRead.hidden = false;
-    renderShape(body.document, body.timeline, body.spans);
+    renderShape(body.document, body.timeline, body.spans, body.noteMap);
     useSuggestions(body.kindLabel, body.suggestions);
 
     el.indexStat.textContent = body.reused
