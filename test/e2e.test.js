@@ -142,6 +142,50 @@ test('the page loads, and says whether the model is up', async (t) => {
   assert.ok(health.length > 0, 'the model status must be reported on arrival');
 });
 
+test('a file dropped anywhere on the BOX is read — not only on the textarea', async (t) => {
+  if (!page) return t.skip('no browser');
+  // 🔴 THE COPY PROMISED THIS AND THE LISTENERS DID NOT KEEP IT. The hint said *"drop a .txt, .md,
+  // .csv, .html or .pdf file anywhere on this box"* while `dragover`/`drop` were bound to the
+  // textarea — so the box's own edges and padding did nothing, and a reader who dropped a file a
+  // centimetre outside the textarea concluded the feature did not exist. George asked, 22 Sep 2026:
+  // *"how about drage and drop as well as pasting?"*
+  //
+  // The drop is synthesized in the page, on the WRAPPER, which is the case that used to fail: a
+  // drop on the textarea itself would have passed before this test existed.
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  const text = 'Dropped notes.\n\n4 April 2024\n\nThe boiler was replaced, and it cost $980.';
+  const seen = await page.evaluate(async (payload) => {
+    const box = document.getElementById('paste-wrap');
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([payload], 'dropped-notes.txt', { type: 'text/plain' }));
+    box.dispatchEvent(new DragEvent('dragover', { dataTransfer: transfer, bubbles: true }));
+    const highlighted = box.classList.contains('drop');
+    box.dispatchEvent(new DragEvent('drop', { dataTransfer: transfer, bubbles: true }));
+    const cleared = box.classList.contains('drop');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return {
+      highlighted,
+      cleared,
+      value: document.getElementById('paste').value,
+      stat: document.getElementById('paste-stat').textContent,
+    };
+  }, text);
+  assert.equal(seen.highlighted, true, 'the box does not show that it will accept the file');
+  assert.equal(seen.cleared, false, 'and it keeps showing it after the file has been dropped');
+  assert.match(seen.value, /4 April 2024/, 'the dropped file was not read into the box');
+  assert.match(seen.stat, /dropped-notes\.txt/, 'and the box does not say which file it read');
+
+  // And the box is a real drop target: a drop on its padding, away from the textarea, is the case
+  // that used to do nothing.
+  const onPadding = await page.evaluate(() => {
+    const box = document.getElementById('paste-wrap');
+    const boxRect = box.getBoundingClientRect();
+    const areaRect = document.getElementById('paste').getBoundingClientRect();
+    return { boxTop: Math.round(boxRect.top), textTop: Math.round(areaRect.top), gap: Math.round(areaRect.top - boxRect.top) };
+  });
+  assert.ok(onPadding.gap >= 0, 'the box must have room around the textarea for this to mean anything');
+});
+
 test('a document can be pasted and indexed, and the charts draw', async (t) => {
   if (!page) return t.skip('no browser');
   await paste(await diary());

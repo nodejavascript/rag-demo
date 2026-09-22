@@ -173,7 +173,7 @@
             the tags are stripped out, and a PDF is read for you.
           </p>
 
-          <div class="paste-wrap">
+          <div class="paste-wrap" id="paste-wrap">
             <label class="sr" for="paste">The document</label>
             <textarea id="paste" spellcheck="false" placeholder="Paste a diary, an article, a resume, a policy, a set of terms — anything long enough to be worth asking about.
 
@@ -219,52 +219,7 @@ It works best when the document has its own structure: dates on their own line, 
 
         <!-- ============ 2 ============ -->
         <section class="step" id="step-2" hidden>
-          <!-- "Index it" was the name of this step, and it stopped being true once the button
-               moved into step 1: pressing it is something the reader does, and this panel is
-               what came back. It now says what it shows. -->
-          <div class="step-head"><div class="step-n">2</div><h2>What it read</h2></div>
-          <p class="hint">
-            What the index made of the document. Every figure below is counted in code across the whole
-            of it — never guessed by the model.
-          </p>
-
-          <div id="shape" hidden>
-            <div class="row tight"><span class="statline" id="shape-title"></span></div>
-            <div class="cards" id="shape-cards"></div>
-            <!-- 🔴 HOW IT WAS INDEXED — the three stages of the index, in seconds, from the indexer's
-                 own stopwatch. Hidden until a document carries timings: a document indexed before
-                 the field existed has none, and three zeroes would read as "it took no time".
-                 George asked for it, 22 Sep 2026: *"is there a new chart you can use to show how it
-                 was index"*. -->
-            <div class="chart-box" id="index-stages-box" hidden>
-              <h3>How it was indexed</h3>
-              <p id="index-stages-note"></p>
-              <canvas id="index-stages" height="112"></canvas>
-            </div>
-            <div class="charts">
-              <div class="chart-box">
-                <h3>The shape of it over time</h3>
-                <p id="timeline-note">Entries per month, counted in code.</p>
-                <canvas id="timeline" height="190"></canvas>
-              </div>
-              <div class="chart-box">
-                <h3>What it is about</h3>
-                <p>The places, people and amounts it mentions most, counted in code.</p>
-                <canvas id="composition" height="190"></canvas>
-              </div>
-            </div>
-            <div class="chart-box" id="heat-box" hidden>
-              <h3>Who and what appears when</h3>
-              <p id="heat-note"></p>
-              <canvas id="heat" height="150"></canvas>
-            </div>
-            <div id="shape-warnings"></div>
-          </div>
-        </section>
-
-        <!-- ============ 3 ============ -->
-        <section class="step" id="step-3" hidden>
-          <div class="step-head"><div class="step-n">3</div><h2>Ask it something</h2></div>
+          <div class="step-head"><div class="step-n">2</div><h2>Ask it something</h2></div>
 
           <!-- 🔴 THE SUGGESTIONS COME BEFORE THE EXPLANATION. George, 22 Sep 2026: the line that
                reads *"This looks like a transcript — try one of these:"* and the questions under it
@@ -350,6 +305,51 @@ It works best when the document has its own structure: dates on their own line, 
               <p class="gaps-tag">Counted in code over the whole document — not written by the model.</p>
               <div id="gaps-body"></div>
             </aside>
+          </div>
+        </section>
+
+        <!-- ============ 3 ============ -->
+        <section class="step" id="step-3" hidden>
+          <!-- "Index it" was the name of this step, and it stopped being true once the button
+               moved into step 1: pressing it is something the reader does, and this panel is
+               what came back. It now says what it shows. -->
+          <div class="step-head"><div class="step-n">3</div><h2>What it read</h2></div>
+          <p class="hint">
+            What the index made of the document. Every figure below is counted in code across the whole
+            of it — never guessed by the model.
+          </p>
+
+          <div id="shape" hidden>
+            <div class="row tight"><span class="statline" id="shape-title"></span></div>
+            <div class="cards" id="shape-cards"></div>
+            <!-- 🔴 HOW IT WAS INDEXED — the three stages of the index, in seconds, from the indexer's
+                 own stopwatch. Hidden until a document carries timings: a document indexed before
+                 the field existed has none, and three zeroes would read as "it took no time".
+                 George asked for it, 22 Sep 2026: *"is there a new chart you can use to show how it
+                 was index"*. -->
+            <div class="chart-box" id="index-stages-box" hidden>
+              <h3>How it was indexed</h3>
+              <p id="index-stages-note"></p>
+              <canvas id="index-stages" height="112"></canvas>
+            </div>
+            <div class="charts">
+              <div class="chart-box">
+                <h3>The shape of it over time</h3>
+                <p id="timeline-note">Entries per month, counted in code.</p>
+                <canvas id="timeline" height="190"></canvas>
+              </div>
+              <div class="chart-box">
+                <h3>What it is about</h3>
+                <p>The places, people and amounts it mentions most, counted in code.</p>
+                <canvas id="composition" height="190"></canvas>
+              </div>
+            </div>
+            <div class="chart-box" id="heat-box" hidden>
+              <h3>Who and what appears when</h3>
+              <p id="heat-note"></p>
+              <canvas id="heat" height="150"></canvas>
+            </div>
+            <div id="shape-warnings"></div>
           </div>
         </section>
 

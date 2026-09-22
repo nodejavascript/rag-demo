@@ -85,9 +85,9 @@ test('the button that indexes the box is in the same step as the box', () => {
   const html = site('index.html');
   assert.match(step(html, 'step-1'), /id="index"/, 'the index button left step 1');
   assert.doesNotMatch(
-    step(html, 'step-2'),
+    step(html, 'step-3'),
     /id="index"/,
-    'the index button drifted back into step 2, away from the box it acts on'
+    'the index button drifted into the reading panel, away from the box it acts on'
   );
 });
 
@@ -100,17 +100,32 @@ test('and it says why it is unavailable rather than being absent', () => {
   assert.match(app, /indexButton\.disabled = length < MIN_CHARS/);
 });
 
-test('and step 2 is named for what it shows, not for what it used to do', () => {
+test('each step is numbered for what it holds', () => {
+  // 🔴 AS OF 22 SEP 2026 THE PANELS SWAPPED PLACES, AND THE NUMBERS WENT WITH THEM. George:
+  // *"put ## Ask it something above ## What it read. i want them to see what it thinks the document
+  // is."* So the panel that asks is step 2 and the panel that shows the reading is step 3 — the id,
+  // the badge and the position all say the same thing. An `id="step-2"` on a panel whose badge
+  // reads 3 is exactly the kind of name that lies, which is what this suite exists to prevent.
   const html = site('index.html');
-  assert.match(
-    step(html, 'step-2'),
-    /<h2>What it read<\/h2>/,
-    'step 2 is not named for the panel it actually holds'
-  );
+  assert.match(step(html, 'step-2'), /<div class="step-n">2<\/div><h2>Ask it something<\/h2>/, 'step 2 is not the panel that asks');
+  assert.match(step(html, 'step-3'), /<div class="step-n">3<\/div><h2>What it read<\/h2>/, 'step 3 is not the panel that shows the reading');
   assert.doesNotMatch(
-    step(html, 'step-2'),
+    html,
     /<h2>Index it<\/h2>/,
-    "step 2 still carries the button's name, which stopped being true when the button moved"
+    "a step still carries the button's name, which stopped being true when the button moved to step 1"
+  );
+});
+
+test('and the ask panel comes BEFORE the panel that shows the reading', () => {
+  // The change itself, asserted as order in the shipped markup — because order is what he asked for.
+  const html = site('index.html');
+  assert.ok(
+    html.indexOf('id="step-2"') < html.indexOf('id="step-3"'),
+    'the reading panel is above the ask panel again'
+  );
+  assert.ok(
+    html.indexOf('id="step-3"') < html.indexOf('id="step-4"'),
+    'and the reading panel must still come before the delete panel'
   );
 });
 
@@ -184,7 +199,7 @@ test('the suggested questions come before the sentence about how questions are m
   // says…"*. An example question this document can actually answer is more use at the top of the
   // step than a sentence about how matching works; the sentence then explains why those examples
   // work. Asserted on the order in the shipped markup, because that order IS the change.
-  const stepThree = step(site('index.html'), 'step-3');
+  const stepThree = step(site('index.html'), 'step-2');
   const suggestions = stepThree.indexOf('id="suggestions"');
   // 🔴 THE HINT IS FOUND BY ITS ELEMENT, NOT BY ITS WORDS. Searching for the phrase
   // "Ask in your own words" found it in the COMMENT ABOVE — which quotes George asking for this
@@ -197,15 +212,46 @@ test('the suggested questions come before the sentence about how questions are m
   assert.ok(suggestions < input, 'and they must come before the box they are suggestions for');
 });
 
-test('and step 2 carries the chart of how it was indexed', () => {
-  // George, 22 Sep 2026: *"is there a new chart you can use to show how it was index"*. It lives in
-  // step 2 with the other charts — but only when the document carries timings, so an older record
-  // hides it instead of drawing three zeroes.
+test('and the reading panel carries the chart of how it was indexed', () => {
+  // George, 22 Sep 2026: *"is there a new chart you can use to show how it was index"*. It lives with
+  // the other charts on the reading panel — but only when the document carries timings, so an older
+  // record hides it instead of drawing three zeroes.
   const html = site('index.html');
-  assert.match(step(html, 'step-2'), /id="index-stages"/, 'the index-stage chart is not in step 2');
+  assert.match(step(html, 'step-3'), /id="index-stages"/, 'the index-stage chart is not on the reading panel');
   const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
   assert.match(app, /renderIndexStages\(document\)/, 'nothing renders it');
   assert.match(app, /document\.stats\.stageMs/, 'and it does not read the measured timings');
+});
+
+/* ------------------------------------------------------- the paste box and the cards */
+
+test('a file can be dropped anywhere on the paste box, not only on the textarea', () => {
+  // 🔴 THE COPY PROMISED IT AND THE LISTENERS DID NOT. The hint has always said *"drop a .txt, .md,
+  // .csv, .html or .pdf file anywhere on this box"*, while `dragover`/`drop` were bound to the
+  // textarea — so the box's own edges and padding did nothing. George asked, 22 Sep 2026: *"how
+  // about drage and drop as well as pasting?"* This asserts the claim and the listener cover the
+  // same element, and that the state is drawn on it.
+  const html = site('index.html');
+  assert.match(html, /<div class="paste-wrap" id="paste-wrap">/, 'the box has no id for a listener to bind to');
+  const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
+  assert.match(app, /pasteWrap: \$\('paste-wrap'\)/);
+  assert.match(app, /const dropZone = el\.pasteWrap;/, 'the drop listeners are not bound to the box');
+  assert.match(app, /dropZone\.addEventListener\('drop'/, 'nothing handles the drop on the box');
+  assert.match(app, /dropZone\.addEventListener\('dragover'/, 'and nothing highlights it while a file is over it');
+  assert.match(app, /contains\(event\.relatedTarget/, 'dragging over a child of the box would flicker the state');
+  assert.match(site('styles.css'), /\.paste-wrap\.drop \{/, 'the drop state is not drawn on the box');
+});
+
+test('and a stat card gives its label, its number and its note room to be read in order', () => {
+  // 🔴 "this is vertically bynched together i dont like" — George, 22 Sep 2026, on a card reading
+  // `Notes / 20 / what gets searched`. The margins were 3px and 1px: a small-caps label sitting on
+  // top of its own number, read as one block. The numbers are asserted because that rhythm is the
+  // fix, and a later tidy-up to `margin-top: 2px` would put it back without anyone noticing.
+  const css = site('styles.css');
+  const value = /\.card \.v \{[^}]*margin-top:\s*(\d+)px/.exec(css);
+  const unit = /\.card \.u \{[^}]*margin-top:\s*(\d+)px/.exec(css);
+  assert.ok(value && Number(value[1]) >= 6, `the number sits too close to its label (${value?.[1] ?? 'no rule'})`);
+  assert.ok(unit && Number(unit[1]) >= 4, `and the note sits too close to its number (${unit?.[1] ?? 'no rule'})`);
 });
 
 /* ------------------------------------------------------------------ identity */

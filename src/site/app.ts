@@ -979,9 +979,16 @@ let suggestions: string[] = [...BEFORE_INDEXING];
 
 const el = {
   paste: $<HTMLTextAreaElement>('paste'),
+  pasteWrap: $('paste-wrap'),
   pasteStat: $('paste-stat'),
-  step2: $('step-2'),
-  step3: $('step-3'),
+  // 🔴 THE TWO PANELS THAT SWAPPED PLACES ON 22 SEP 2026, AND THE KEYS SAY WHICH IS WHICH.
+  // George: *"put ## Ask it something above ## What it read. i want them to see what it thinks the
+  // document is."* The NUMBERS moved with the content — the panel that asks is step 2, the panel
+  // that shows what was read is step 3 — so an id and a badge never disagree. These keys are named
+  // for what the panel IS rather than for its position, because the position is the thing that
+  // changed.
+  stepAsk: $('step-2'),
+  stepRead: $('step-3'),
   step4: $('step-4'),
   indexButton: $<HTMLButtonElement>('index'),
   indexStat: $('index-stat'),
@@ -1043,6 +1050,18 @@ const el = {
 /** The shortest document the server will index. Kept in step with `MIN_CHARS`. */
 const MIN_CHARS = 200;
 
+/**
+ * The name of the file the box is holding, if it came from a file rather than from typing.
+ *
+ * 🔴 IT WAS SHOWN FOR A MOMENT AND THEN ERASED. `loadFile` wrote *"notes.txt — reading it…"* and
+ * then called the counting function, which replaced the whole line with the character count — so
+ * the one thing a reader who dropped a file needs to be sure of, **which file was read**, vanished
+ * the instant it was read. Found by the drop test on 22 Sep 2026, which asked the page to name the
+ * file and was answered with a count. Typing or pasting by hand clears it, because then the box is
+ * not holding that file any more.
+ */
+let loadedFrom: string | null = null;
+
 function updatePasteStat(): void {
   const text = el.paste.value;
   const length = text.trim().length;
@@ -1061,23 +1080,47 @@ function updatePasteStat(): void {
   const words = (text.match(/[\p{L}\p{N}'\u2019-]+/gu) ?? []).length;
   const lines = text.split('\n').length;
   el.pasteStat.innerHTML =
+    (loadedFrom ? `<b>${esc(loadedFrom)}</b> · ` : '') +
     `<b>${text.length.toLocaleString()}</b> characters · <b>${words.toLocaleString()}</b> words · ` +
     `<b>${lines.toLocaleString()}</b> lines` +
     (length < MIN_CHARS ? ' · <b>too short to index yet</b>' : ' · ready to index');
 }
 
-el.paste.addEventListener('input', updatePasteStat);
-
-el.paste.addEventListener('dragover', (event) => {
-  event.preventDefault();
-  el.paste.classList.add('drop');
+// Typing or pasting by hand means the box is no longer holding that file, so the name goes.
+el.paste.addEventListener('input', () => {
+  loadedFrom = null;
+  updatePasteStat();
 });
-el.paste.addEventListener('dragleave', () => el.paste.classList.remove('drop'));
-el.paste.addEventListener('drop', (event) => {
+
+// 🔴 THE WHOLE BOX TAKES A DROPPED FILE, NOT ONLY THE TEXTAREA. The hint has always said *"drop a
+// .txt, .md, .csv, .html or .pdf file anywhere on this box"* — and the listeners were on the
+// textarea, so the box's own padding and its label ring did nothing. George asked, 22 Sep 2026:
+// *"how about drage and drop as well as pasting?"* The claim in the copy and the listener now cover
+// the same element.
+const dropZone = el.pasteWrap;
+dropZone.addEventListener('dragover', (event) => {
   event.preventDefault();
-  el.paste.classList.remove('drop');
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  dropZone.classList.add('drop');
+});
+// `dragleave` also fires when the pointer moves onto a CHILD of the box, which would make the state
+// flicker as the file is dragged across the textarea. Only leaving the box itself clears it.
+dropZone.addEventListener('dragleave', (event) => {
+  if (!dropZone.contains(event.relatedTarget as Node | null)) dropZone.classList.remove('drop');
+});
+dropZone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropZone.classList.remove('drop');
   const file = event.dataTransfer?.files?.[0];
   if (file) void loadFile(file);
+  // Dropping text (a selection dragged from another window) fills the box like a paste.
+  else {
+    const text = event.dataTransfer?.getData('text/plain');
+    if (text) {
+      el.paste.value = text;
+      updatePasteStat();
+    }
+  }
 });
 
 $('pick-file').addEventListener('click', () => $<HTMLInputElement>('file').click());
@@ -1109,6 +1152,7 @@ async function loadFile(file: File): Promise<void> {
     } else {
       el.paste.value = await file.text();
     }
+    loadedFrom = file.name;
     updatePasteStat();
   } catch (error) {
     el.pasteStat.innerHTML = '';
@@ -1143,8 +1187,8 @@ function resetToHome(): void {
   if (el.funnelBox) el.funnelBox.hidden = true;
 
   // The steps that only exist while a document does.
-  el.step2.hidden = true;
-  el.step3.hidden = true;
+  el.stepAsk.hidden = true;
+  el.stepRead.hidden = true;
   el.step4.hidden = true;
   el.shape.hidden = true;
   el.answerWrap.hidden = true;
@@ -1155,6 +1199,7 @@ function resetToHome(): void {
   // The input side.
   el.paste.value = '';
   el.question.value = '';
+  loadedFrom = null;
   const file = document.querySelector<HTMLInputElement>('#file');
   if (file) file.value = '';
   el.pasteStat.textContent = 'Nothing pasted yet.';
@@ -1203,7 +1248,7 @@ function resetToHome(): void {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
-/* ------------------------------------------------------------------ step 2 */
+/* ------------------------------------------------------------------ the reading */
 
 function card(key: string, value: string, unit: string): string {
   return `<div class="card"><div class="k">${esc(key)}</div><div class="v">${esc(value)}</div><div class="u">${esc(unit)}</div></div>`;
@@ -1623,9 +1668,9 @@ async function indexNow(): Promise<void> {
     // 🔴 THE SECTION IS REVEALED BEFORE ANYTHING IS DRAWN INTO IT. A canvas in a hidden section
     // has no layout, so `fit()` measured the 320-pixel fallback, drew a 320-wide bitmap, and the
     // page stretched it across the full column — 2.56× on the heat map. The order was the bug.
-    // Step 2 is the READING — the panel that came back — so it appears when there is something to
+    // This is the READING — the panel that came back — so it appears when there is something to
     // show, not when enough text has been typed.
-    el.step2.hidden = false;
+    el.stepRead.hidden = false;
     renderShape(body.document, body.timeline, body.spans);
     useSuggestions(body.kindLabel, body.suggestions);
 
@@ -1651,7 +1696,7 @@ async function indexNow(): Promise<void> {
       .map((warning) => `<div class="warn-box">${esc(warning)}</div>`)
       .join('');
 
-    el.step3.hidden = false;
+    el.stepAsk.hidden = false;
     el.step4.hidden = false;
     renderTtl(body.document);
 

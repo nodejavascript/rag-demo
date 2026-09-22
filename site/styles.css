@@ -232,7 +232,12 @@ textarea#paste {
   transition: border-color 0.15s;
 }
 textarea#paste:focus { border-color: var(--accent-2); }
-textarea#paste.drop { border-color: var(--accent); background: #08201f; }
+/* 🔴 THE DROP TARGET IS THE WHOLE BOX, NOT ONLY THE TEXTAREA — see the listener comment in
+   `src/site/app.ts`. The state has to be visible on the thing a file can be dropped on, or a reader
+   who drops one centimetre outside the textarea sees nothing happen and concludes it does not
+   work. */
+.paste-wrap.drop { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 14px; }
+.paste-wrap.drop textarea#paste { border-color: var(--accent); background: #08201f; }
 textarea#paste::placeholder { color: #4d7a7f; }
 
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
@@ -297,11 +302,22 @@ input:focus { border-color: var(--accent-2); }
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 12px 13px;
+  padding: 13px 14px 14px;
 }
-.card .k { font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted); }
-.card .v { font-size: 25px; font-weight: 660; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 3px; }
-.card .u { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.card .k { font-size: 11px; line-height: 1.4; letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted); }
+/* 🔴 THE LABEL, THE NUMBER AND THE NOTE ARE THREE THINGS, AND THEY NEED AIR BETWEEN THEM. George,
+   22 Sep 2026, on a card reading `Notes / 20 / what gets searched`: *"this is vertically bynched
+   together i dont like"*. It was 3px then 1px — a small-caps label sitting on top of its own
+   number, reading as one block. 7px and 5px give the eye an order to follow. */
+.card .v {
+  font-size: 25px;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 7px;
+  line-height: 1.15;
+}
+.card .u { font-size: 12px; color: var(--muted); margin-top: 5px; }
 
 .charts { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
 @media (max-width: 880px) { .charts { grid-template-columns: 1fr; } }
