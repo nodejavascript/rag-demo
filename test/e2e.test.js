@@ -199,6 +199,14 @@ test('a document can be pasted and indexed, and the charts draw', async (t) => {
   assert.ok(cards.some((card) => /ENTRIES/i.test(card)), 'the shape must be reported');
   assert.ok(cards.some((card) => /SPAN/i.test(card)));
 
+  // 🔴 THE LINE THAT NAMES THE DOCUMENT, AS IT IS ACTUALLY RENDERED. George, 22 Sep 2026: *"make it
+  // say only this This looks like a resume"*. Asserted on the text in the DOM rather than in the
+  // source, because the string is assembled at runtime — and asserted HERE, in the test that has a
+  // model to index with, because the line only exists once the server has read the document.
+  const naming = await page.locator('#suggestions-hint').innerText();
+  assert.match(naming, /^This looks like\s+\S/, `the line naming the document reads "${naming}"`);
+  assert.doesNotMatch(naming, /try one of these/i, 'the tail came back on the line that names the document');
+
   // A canvas that was never drawn has zero painted pixels; one that was drawn does not.
   const painted = await page.evaluate(() => {
     const canvas = document.getElementById('timeline');

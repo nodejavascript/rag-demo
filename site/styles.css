@@ -246,18 +246,22 @@ textarea#paste::placeholder { color: #4d7a7f; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .row.tight { margin-top: 8px; gap: 8px; }
 
-/* 🔴 WHAT THE DOCUMENT WAS TAKEN FOR, AND THE QUESTIONS IT CAN ANSWER — UNDER THE BOX, WITH ROOM.
-   George, 22 Sep 2026: *"i want more vertical space above and below this. this tells users how smart
-   the rag is. also the button questions go under the user ask"*. Measured before the change: 10px
-   above the line and NOTHING below the last chip, so the one part of the page that shows the
-document was understood read as a caption squeezed against the controls. An ID selector beats
-   `.row.tight`'s 8px, which is the only reason the space is stated here and not on the class.
-   Empty until something is indexed, and it takes no room while it is — and `#step-2` is only ever
-   revealed by the index response that fills this line, so the room is never paid for nothing. */
-.suggest-hint { margin: 0; font-size: 13.5px; color: var(--muted, #8b93a7); }
+/* 🔴 WHAT THE DOCUMENT WAS TAKEN FOR IS A LINE UNDER THE STEP'S OWN HEADING — AND IT GETS AIR ON
+   BOTH SIDES. George, 22 Sep 2026, first: *"i want more vertical space above and below this. this
+   tells users how smart the rag is"* — and then, correcting where it had been put: *"i didnt say to
+   move this down … make it say only this This looks like a resume and use the ask it something with
+   proper vertical spacing"*. Measured before any of it: 10px above the line and 0px below, so the
+   one thing on the page that shows the document was understood read as a caption welded to the
+   sentence underneath it. The room sits on the LINE rather than on its row, so when there is no
+   guess to show the margin leaves with it (`:empty` below). Above it: the heading's own 6px, the
+   row's 8px, and these 2px — 16px in all, which is what "proper" meant here. */
+.suggest-hint { margin: 2px 0 14px; font-size: 13.5px; color: var(--muted, #8b93a7); }
 .suggest-hint:empty { display: none; }
-#suggestions-hint-row { margin-top: 30px; }
-#suggestions { margin-bottom: 26px; }
+
+/* 🔴 THE QUESTION BUTTONS FOLLOW THE BOX THE READER ASKS IN, AND THEY GET AIR TOO — 24px above them
+   and 26px below the last one, which is where the answer will arrive. An ID selector beats
+   `.row.tight`'s 8px, which is the only reason these numbers are stated here and not on the class. */
+#suggestions { margin-top: 24px; margin-bottom: 26px; }
 .grow { flex: 1 1 auto; }
 
 button, .btn {

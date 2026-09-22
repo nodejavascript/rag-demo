@@ -1785,8 +1785,14 @@ function useSuggestions(kindLabel: string | undefined, next: string[] | undefine
   // thing that has to be visible enough to be disagreed with — plain grey text between two
   // sentences is a guess nobody notices, and a guess nobody notices is a guess nobody can
   // correct. George, 20 Sep 2026: "make what it looks like highlighted".
+  //
+  // 🔴 AND ON 22 SEP 2026 THE TAIL AFTER IT WENT. The line ended *"— try one of these:"* while the
+  // question buttons sat directly under it; the buttons moved under the box, so the tail pointed at
+  // nothing — and George asked for the line to say *"only this This looks like a resume"*. A guess
+  // with no tail is also the more honest shape: the page is saying what it thinks the document is,
+  // not advertising the buttons.
   el.suggestHint.innerHTML = kindLabel
-    ? `This looks like <b class="kind-badge">${esc(kindLabel)}</b> — try one of these:`
+    ? `This looks like <b class="kind-badge">${esc(kindLabel)}</b>.`
     : '';
   renderSuggestions();
 }

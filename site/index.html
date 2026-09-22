@@ -221,6 +221,17 @@ It works best when the document has its own structure: dates on their own line, 
         <section class="step" id="step-2" hidden>
           <div class="step-head"><div class="step-n">2</div><h2>Ask it something</h2></div>
 
+          <!-- 🔴 WHAT THE DOCUMENT WAS TAKEN FOR IS A LINE UNDER THE STEP'S OWN HEADING, AND IT SAYS
+               NOTHING ELSE. George, 22 Sep 2026, correcting the order of the same two nodes for the
+               second time: *"i didnt say to move this down … make it say only this This looks like a
+               resume and use the ask it something with proper vertical spacing"*. So this line stays
+               with "Ask it something" and gives the reader the one thing on the page that is a guess
+               about their document — the words *"— try one of these:"* are gone, because the buttons
+               it used to introduce are no longer next to it. It is filled by `useSuggestions()`, and
+               the room above and below it is in `styles.css`. -->
+          <div class="row tight" id="suggestions-hint-row">
+            <p class="suggest-hint" id="suggestions-hint"></p>
+          </div>
 
           <p class="hint">
             Ask in your own words. It looks for what the document <em>says</em> about the subject, not for
@@ -241,17 +252,9 @@ It works best when the document has its own structure: dates on their own line, 
           </div>
           <div id="ask-error"></div>
 
-          <!-- 🔴 WHAT THE DOCUMENT WAS TAKEN FOR, AND THE QUESTIONS IT CAN ANSWER, SIT UNDER THE
-               BOX THE READER ASKS IN — AND THEY ARE GIVEN ROOM. George, 22 Sep 2026, answering an
-               earlier order of the same two nodes: *"This looks like a resume — try one of these: i
-               want more vertical space above and below this. this tells users how smart the rag is.
-               also the button questions go under the user ask"*. So the box comes first, the
-               ready-made questions come under it, and the line naming what the document looks like
-               gets the air that makes it read as a remark about the document rather than a caption
-               stuck to a row of controls. The space itself is in `styles.css`. -->
-          <div class="row tight" id="suggestions-hint-row">
-            <p class="suggest-hint" id="suggestions-hint"></p>
-          </div>
+          <!-- The question buttons follow the box the reader asks in, so they read as ready-made
+               alternatives to typing — George, 22 Sep 2026: *"the button questions go under the user
+               ask"*. -->
           <div class="row tight" id="suggestions"></div>
 
           <!-- 🔴 THE CHART THAT RUNS WHILE THE ANSWER IS BEING BUILT. George, 20 Sep 2026: *"when

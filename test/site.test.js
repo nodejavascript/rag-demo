@@ -193,45 +193,62 @@ test('and the two mention charts are ranked highest-first, with gradient bars', 
   assert.match(charts, /\.sort\(\(a, b\) => b\.count - a\.count\)/, 'the heat rows are not ranked by count');
 });
 
-test('the question buttons sit under the box the reader asks in, with room above and below them', () => {
-  // George, 22 Sep 2026, moving the same two nodes a second time: *"This looks like a resume — try
-  // one of these: i want more vertical space above and below this. this tells users how smart the
-  // rag is. also the button questions go under the user ask."* So the box comes first and the
-  // ready-made questions follow it, and that block — the line naming what the document was taken
-  // for plus the questions under it — is given air, because it is the page demonstrating that it
-  // understood the document.
+test('the line naming the document sits under its heading, and the questions sit under the box', () => {
+  // George, 22 Sep 2026, and it took him two corrections to land it: *"i didnt say to move this down
+  // … make it say only this This looks like a resume and use the ask it something with proper
+  // vertical spacing"*. So the line that says what the document was taken for belongs UNDER the
+  // "Ask it something" heading — not down with the buttons — it says nothing but the guess, and the
+  // question buttons stay under the box the reader asks in. All four facts are asserted here: the
+  // order, the missing tail, and the room on each side.
   const askPanel = step(site('index.html'), 'step-2');
   const at = {
+    heading: askPanel.indexOf('Ask it something</h2>'),
+    theLine: askPanel.indexOf('id="suggestions-hint-row"'),
+    // 🔴 THE HINT IS FOUND BY ITS ELEMENT, NOT BY ITS WORDS. Searching for the phrase
+    // "Ask in your own words" found it in the COMMENT ABOVE — which quotes George asking for this
+    // very change — so the guard failed on the fix it was written to protect. A guard that searches
+    // prose will always find its own comment, and the comment is usually nearer the top.
     hint: askPanel.indexOf('<p class="hint">'),
-    input: askPanel.indexOf('id="question"'),
+    box: askPanel.indexOf('id="question"'),
     askButton: askPanel.indexOf('id="ask"'),
     errorLine: askPanel.indexOf('id="ask-error"'),
-    theLine: askPanel.indexOf('id="suggestions-hint-row"'),
-    theQuestions: askPanel.indexOf('id="suggestions"'),
+    theButtons: askPanel.indexOf('id="suggestions"'),
   };
-  // 🔴 THE HINT IS FOUND BY ITS ELEMENT, NOT BY ITS WORDS. Searching for the phrase
-  // "Ask in your own words" found it in the COMMENT ABOVE — which quotes George asking for this
-  // very change — so the guard failed on the fix it was written to protect. A guard that searches
-  // prose will always find its own comment, and the comment is usually nearer the top.
   assert.ok(
     Object.values(at).every((index) => index !== -1),
     `the ask panel lost part of itself: ${JSON.stringify(at)}`
   );
-  assert.ok(at.hint < at.input, 'the sentence about how questions are matched must explain the box below it');
-  assert.ok(at.input < at.askButton, 'the Ask button must follow the box it submits');
-  assert.ok(at.askButton < at.theLine, 'the questions went back above the box the reader asks in');
-  assert.ok(at.errorLine < at.theLine, 'the error line belongs to the box, so it stays above the questions');
-  assert.ok(at.theLine < at.theQuestions, 'the line naming the document must introduce the questions under it');
+  assert.ok(at.heading < at.theLine, 'the line naming the document drifted away from the heading it belongs to');
+  assert.ok(at.theLine < at.hint, 'and it must come before the sentence that explains the box');
+  assert.ok(at.hint < at.box && at.box < at.askButton && at.askButton < at.errorLine, 'the box, its button and its error line came apart');
+  assert.ok(at.errorLine < at.theButtons, 'the questions went back above the box the reader asks in');
 
-  // The room is the other half of the ask, and an order without it is only half done.
+  // It says the guess and nothing else: no lead-in to buttons that are no longer beside it.
+  // 🔴 THE ASSERTION IS ON THE ASSIGNED STRING, NOT ON THE FILE'S PROSE. The first version of this
+  // guard searched `app.ts` for the old tail and FAILED ON THE COMMENT that quotes George asking for
+  // its removal — the same trap as the hint above, met again two lines later. Matching the template
+  // literal with its closing backtick is a check no comment can satisfy, and it pins the whole
+  // sentence: the string must end at `</b>.` and nothing may follow it.
+  const app = readFileSync(join(here, '..', 'src', 'site', 'app.ts'), 'utf8');
+  assert.match(
+    app,
+    /`This looks like <b class="kind-badge">\$\{esc\(kindLabel\)\}<\/b>\.`/,
+    'the line naming the document no longer ends where it should — it either lost its full stop or grew a tail'
+  );
+
+  // And the room, which is the other half of what he asked for.
   const css = site('styles.css');
-  const above = /#suggestions-hint-row\s*\{[^}]*margin-top:\s*(\d+)px/.exec(css);
-  const below = /#suggestions\s*\{[^}]*margin-bottom:\s*(\d+)px/.exec(css);
-  assert.ok(above, 'nothing states the space above the line that names the document');
-  assert.ok(below, 'nothing states the space below the questions');
-  assert.ok(Number(above[1]) >= 24, `the line naming the document has only ${above[1]}px above it`);
-  assert.ok(Number(below[1]) >= 20, `the questions have only ${below[1]}px below them`);
-  assert.match(css, /\.suggest-hint \{ margin: 0;/, 'the line kept its own top margin, which double-counts the room above');
+  const line = /\.suggest-hint \{ margin: (\d+)px 0 (\d+)px;/.exec(css);
+  const buttons = /#suggestions \{ margin-top: (\d+)px; margin-bottom: (\d+)px; \}/.exec(css);
+  assert.ok(line, 'nothing states the room above and below the line naming the document');
+  assert.ok(buttons, 'nothing states the room around the question buttons');
+  assert.ok(Number(line[2]) >= 10, `the line has only ${line[2]}px below it`);
+  // It is a subtitle of the heading above it, so its own top margin stays small — the heading's 6px
+  // and its row's 8px are what separate the two. A big number here would push the line away from the
+  // heading it was just put back under, which is the fault this whole correction was about.
+  assert.ok(Number(line[1]) <= 6, `the line has ${line[1]}px above it, which pushes it off its heading`);
+  assert.ok(Number(buttons[1]) >= 16, `the questions have only ${buttons[1]}px above them`);
+  assert.ok(Number(buttons[2]) >= 20, `the questions have only ${buttons[2]}px below them`);
 });
 
 test('and the reading panel carries the chart of how it was indexed', () => {
