@@ -392,8 +392,21 @@ test('and no chart shares a row with another', () => {
   // `@media (max-width: 620px)` — and reported a two-column grid as fine, because the mobile rule
   // also says `1fr`. A guard that reads a rule that does not govern is worse than no guard: it went
   // green against the very regression it exists to catch.
+  //
+  // 🔴 AND THE SECOND FIX, 22 Sep 2026 — THE FIRST FIX HAD ITS OWN BUG, AND IT WAS A FALSE FAILURE.
+  // `\\.charts \\{` matches a rule whose selector merely ENDS in `.charts`, and three lines below the
+  // grid sits `#shape > .chart-box + .charts { margin-top: 14px; }` — a SPACING rule, with no columns
+  // in it at all. The guard read that as the grid, found no `grid-template-columns`, and failed on a
+  // correct stylesheet. It had been failing since the guards were rewritten and nothing had run the
+  // suite; a false failure is worse than no check, because it teaches the reader to ignore the guard.
+  // **A `.charts` rule must now START a selector** — an anchored `^` or a `,`/`}` before it — so a
+  // sibling or descendant selector cannot be read as the grid. Proved able to fail afterwards by
+  // setting the grid to two columns and watching it fail, then putting `1fr` back.
   const css = withoutComments(site('styles.css'));
-  const rules = css.match(/\.charts \{[^}]*\}/g) ?? [];
+  // The group is the rule ITSELF; the anchor character before it (a `}` or a `,`) is consumed by the
+  // pattern but not reported, so a failure quotes the rule rather than the rule plus the tail of its
+  // neighbour.
+  const rules = [...css.matchAll(/(?:^|[},])\s*(\.charts\s*\{[^}]*\})/gm)].map((m) => m[1]);
   assert.ok(rules.length > 0, 'the .charts grid rules are gone');
   for (const rule of rules) {
     assert.match(rule, /grid-template-columns:\s*1fr(;|\s*\})/, `a chart is sharing a row: ${rule}`);
@@ -417,4 +430,63 @@ test('the chart of what it is about is ordered by the value, biggest first', () 
   assert.match(app, /mentions\.places/);
   assert.match(app, /mentions\.people/);
   assert.match(app, /mentions\.amounts/);
+});
+
+/* ------------------------------------------------------------- the law moved */
+
+/**
+ * 🔴 THE LAW-CHANGE DISCLOSURE — George, 22 Sep 2026, verbatim: *"make this a disclaimer …
+ * the law moved after this window closed. This page … cite laws and what im showing and why
+ * it is legal"*.
+ *
+ * `datasets-demo` has carried this disclosure since its own review, and it works there because
+ * that corpus is fixed: the sections that moved are named and dated from the Act's own
+ * consolidation (section 44 from 1 July 2026, sections 49/54/57.1/58/59 from 21 September 2026).
+ * **There is no corpus here** — the document is whatever the reader pastes — so this block names
+ * the SOURCES of the law rather than a section.
+ *
+ * It would catch: the block deleted as "too much text"; the window sentence softened into
+ * something that no longer warns; the paragraph saying nothing is published being dropped; the
+ * "not a lawyer" line going, which is the one that keeps this from reading as advice; and — the
+ * reason for the last assertion — a later edit copying a statute onto to this page to make the
+ * two blocks look alike, when this page has no way to check one.
+ */
+test('the page says the law moved after the document’s window closed', () => {
+  // Read the BLOCK, not the file. It is located by its own class so the comment above it — which
+  // says the same words in capitals — can never stand in for the block if the block is deleted.
+  const flat = site('index.html').replace(/\s+/g, ' ');
+  const at = flat.indexOf('class="legal"');
+  assert.ok(at > 0, 'the law-change disclosure is gone from the page');
+  const block = flat.slice(at, flat.indexOf('</div>', at));
+
+  assert.match(block, /The law moved after this window closed/,
+    'the disclosure no longer carries the sentence George asked for');
+  assert.match(block, /at a moment in time/, 'the block no longer says a document is a snapshot');
+  assert.match(block, /not the law as it stands today/,
+    'the block no longer distinguishes the document from the law as it stands now');
+  assert.match(block, /every number is counted in code/,
+    'the block no longer says where its figures come from');
+  assert.match(block, /What this page shows\./, 'the "what this page shows" paragraph is gone');
+  assert.match(block, /publishes nothing/, 'the block no longer says the page publishes nothing');
+  assert.match(block, /not a lawyer/, 'the "this is not legal advice" line is gone');
+
+  // The law is reachable as a SOURCE, and the links have to be the real ones — checked alive
+  // (both HTTP 200) before they were put on a public page.
+  assert.match(block, /ontario\.ca\/laws/, 'the Ontario consolidation is not linked');
+  assert.match(block, /laws-lois\.justice\.gc\.ca/, 'the federal consolidation is not linked');
+
+  // 🔴 AND NO SECTION NUMBER. A statute cited here would be a claim this page cannot open, so
+  // the guard refuses one outright rather than leaving it to whoever reads the diff next.
+  const cites = [...block.matchAll(/\b(?:section|s\.)\s?\d+[.\d]*/gi)].map((m) => m[0]);
+  assert.deepEqual(cites, [], `the disclosure cites a section this page cannot check: ${cites.join(', ')}`);
+});
+
+test('and the disclosure is styled to be noticed, not to read as body text', () => {
+  const css = site('styles.css');
+  assert.match(css, /^\.legal\s*\{/m, 'there is no .legal rule, so the block is plain body text');
+  const rule = css.slice(css.indexOf('.legal {')).split('}')[0];
+  assert.match(rule, /border-left:/, 'the disclosure lost the edge that makes it findable');
+  assert.match(rule, /var\(--warn\)/, 'the disclosure no longer uses the warning hue');
+  assert.match(site('index.html'), /class="legal" data-law-change/,
+    'the block and its rule have come apart — one of the two was renamed');
 });

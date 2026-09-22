@@ -595,6 +595,24 @@ section.block p { color: var(--ink-2); max-width: 76ch; }
 .note ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14.5px; }
 .note li { margin: 4px 0; }
 
+/* 🔴 THE LAW-CHANGE DISCLOSURE (22 Sep 2026). A disclosure set as ordinary body text is a
+   disclosure nobody notices, and this one has to be read BEFORE a reader acts on an answer
+   drawn from a legal document — so it gets a panel of its own, full width, with an edge to
+   it. **Amber, deliberately:** teal is what the page says and indigo is what the model
+   wrote, and a warning is neither, so it borrows neither hue. */
+.legal {
+  margin-top: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-left: 4px solid var(--warn);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.legal h3 { margin: 0 0 8px; font-size: 15px; color: var(--ink); }
+.legal p { margin: 0 0 10px; color: var(--ink-2); font-size: 14.5px; }
+.legal p:last-child { margin-bottom: 0; }
+.legal a { color: var(--accent); }
+
 footer {
   border-top: 1px solid var(--line);
   /* No margin-top: llm-demo has none either, because `main`'s 60px bottom padding already
