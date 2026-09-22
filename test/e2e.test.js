@@ -1316,3 +1316,73 @@ test('clicking the suggested questions quickly cancels the answers it walked awa
   const button = await page.locator('#ask').innerText();
   assert.match(button, /ask/i, 'the ask button must be back to itself once the last answer lands');
 });
+
+/**
+ * 🔴 INDEXING THE SAME TEXT TWICE MUST NOT BLINK.
+ *
+ * George, 22 Sep 2026, verbatim: *"the index it button does not behave the same, the chart is not there
+ * and there is a weird flickering"*. All three were one behaviour, and the server's own log named it:
+ * five runs of the same document, every one `reused=true`. The reused path sends no batches, so the
+ * old code put the chart on screen on the way in (`hidden = false`) and took it off again on the way
+ * out (`hidden = points.length === 0`) — inside about a tenth of a second. What a reader saw was a
+ * canvas appearing and vanishing, a ~190-pixel layout shift as it did, and an Index button that went
+ * disabled and enabled too fast to read, which is why it "does not behave the same".
+ *
+ * The property is asserted with a MutationObserver on the chart's own `hidden` attribute rather than by
+ * timing anything: the second run of the same text must change it ZERO times, and the chart must be
+ * exactly as visible after the run as it was before it.
+ */
+test('indexing the same text twice changes nothing on the page', async (t) => {
+  if (!page) return t.skip('no browser');
+  if (!modelUp) return t.skip('no model is reachable, so nothing can be indexed');
+
+  const text = await diary();
+  await paste(text);
+  await page.click('#index');
+  await page.waitForFunction(() => !document.getElementById('shape').hidden, null, { timeout: 120000 });
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 60000 });
+
+  const firstRun = await page.evaluate(() => ({
+    chartHidden: document.getElementById('index-chart').hidden,
+    note: document.getElementById('index-progress-note').innerText,
+  }));
+
+  // Watch the chart's visibility for the whole of the second run.
+  await page.evaluate(() => {
+    window.__chartFlips = 0;
+    const chart = document.getElementById('index-chart');
+    window.__chartObserver = new MutationObserver((records) => {
+      for (const record of records) if (record.attributeName === 'hidden') window.__chartFlips += 1;
+    });
+    window.__chartObserver.observe(chart, { attributes: true, attributeFilter: ['hidden'] });
+  });
+
+  // The same text again. The server reuses the index, so this run embeds nothing and reports nothing.
+  await page.click('#index');
+  await page.waitForFunction(() => !document.getElementById('index').disabled, null, { timeout: 60000 });
+  await page.waitForTimeout(600);
+
+  const secondRun = await page.evaluate(() => {
+    window.__chartObserver.disconnect();
+    return {
+      flips: window.__chartFlips,
+      chartHidden: document.getElementById('index-chart').hidden,
+      note: document.getElementById('index-progress-note').innerText,
+      stat: document.getElementById('index-stat').innerText,
+    };
+  });
+
+  assert.equal(
+    secondRun.flips,
+    0,
+    `the chart was shown and hidden ${secondRun.flips} time(s) during the second run — the blink. ` +
+      `First run: ${JSON.stringify(firstRun)} · second: ${JSON.stringify(secondRun)}`
+  );
+  assert.equal(
+    secondRun.chartHidden,
+    firstRun.chartHidden,
+    `the chart changed visibility across the second run: was ${firstRun.chartHidden}, now ${secondRun.chartHidden}`
+  );
+  // And the page says what happened rather than looking broken: the reuse is a fact about the run.
+  assert.match(secondRun.note, /already indexed|nothing to do/i, `the reused run must say so — got "${secondRun.note}"`);
+});

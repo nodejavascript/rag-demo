@@ -1706,7 +1706,19 @@ async function indexNow(): Promise<void> {
   el.indexStat.textContent = note;
   el.indexProgressTitle.textContent = 'Reading it';
   el.indexProgressNote.textContent = note;
-  el.indexChart.hidden = false;
+  // 🔴 THE CHART IS NOT REVEALED HERE — IT IS REVEALED WHEN THERE IS SOMETHING TO DRAW IN IT.
+  // George, 22 Sep 2026, verbatim: *"the index it button does not behave the same, the chart is not
+  // there and there is a weird flickering"*. All three were one behaviour, and the server log shows
+  // it: five runs of the same document, each `reused=true`. This line used to be
+  // `el.indexChart.hidden = false`, and on the reused path no batch is ever sent — so the chart was
+  // put on screen on the way in, taken off again on the way out (`hidden = points.length === 0`),
+  // and a reused run finishes in about a tenth of a second. The result was a canvas that appeared
+  // and vanished in one blink, a layout shift of ~190 pixels as it did, a button that went disabled
+  // and enabled too fast to see, and a chart that "is not there" — because it never stayed long
+  // enough to read. The chart now appears on the FIRST progress event, which for a real run is
+  // within milliseconds and still before any note has been embedded; a reused run, which has no
+  // progress to report, shows the sentence and no chart, and a chart already on screen from an
+  // earlier run is left alone rather than flashing off and back on.
   el.indexProgress.hidden = false;
 
   try {
@@ -1733,7 +1745,10 @@ async function indexNow(): Promise<void> {
           : (STAGE_WORDS[progress.stage] ?? 'Working…');
       el.indexStat.textContent = note;
       el.indexProgressNote.textContent = `${note} ${(progress.ms / 1000).toFixed(1)} s so far.`;
-      // The box is already on screen, so `fit()` can measure it before anything is drawn.
+      // The box is already on screen — and the chart goes on screen here, on the first real
+      // progress event and not before, so a run that never reports anything never flashes one.
+      el.indexChart.hidden = false;
+      // `fit()` can measure it because the box is already visible.
       painting(el.indexChart, () => drawProgress(el.indexChart, points, Math.max(total, 1)));
     })) as {
       document?: DocumentView;
@@ -1772,10 +1787,14 @@ async function indexNow(): Promise<void> {
     el.indexProgressNote.textContent = body.reused
       ? 'Nothing to do — this exact text was already indexed.'
       : `${plural(body.document.stats.chunks, 'note')} embedded in ${(body.document.stats.embeddingMs / 1000).toFixed(1)} s. One line per batch, as it happened.`;
-    // 🔴 A CHART WITH NOTHING ON IT IS NOT A CHART. On the reused path no batch is ever sent, so
-    // there are no points and the axes would draw an empty box reading `0` to `1` — which looks
-    // like a measurement that failed. The canvas goes; the sentence stays.
-    el.indexChart.hidden = points.length === 0;
+    // 🔴 A CHART WITH NOTHING ON IT IS NOT A CHART — AND A CHART ALREADY ON SCREEN IS NOT TAKEN AWAY.
+    // On the reused path no batch is ever sent, so there are no points and the axes would draw an
+    // empty box reading `0` to `1`, which looks like a measurement that failed. The old line was
+    // `hidden = points.length === 0`, which put a chart on screen and then removed it — the blink
+    // George reported. Now nothing is drawn and nothing is hidden: a chart left over from an
+    // earlier run of this document is a true record of that run, and keeping it means the second
+    // run of the same text changes nothing on the page at all. Nothing moves.
+    if (points.length > 0) el.indexChart.hidden = false;
 
     el.shapeWarnings.innerHTML = (body.warnings ?? [])
       .map((warning) => `<div class="warn-box">${esc(warning)}</div>`)
