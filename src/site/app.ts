@@ -1335,24 +1335,21 @@ function renderShape(document: DocumentView, timeline: { month: string; entries:
 
   el.shapeCards.innerHTML = [
     card('Entries', stats.entries.toLocaleString(), 'blocks of the document'),
-    // 🔴 CARD 4 ABOVE CARD 2 — George, 22 Sep 2026, verbatim: *"put card 4 above card 2 that is
-    // all"*. "Full dates" now sits directly under "Entries", where it reads as the next thing the
-    // reader wants to know about the blocks that were taken in: how many of them carry a real date.
-    // Nothing else about the row changed; the cards are the same six in the same words.
+    card('Notes', stats.chunks.toLocaleString(), 'what gets searched'),
+    card('Words', stats.words.toLocaleString(), `${stats.characters.toLocaleString()} characters`),
+    // 🔴 THESE CARDS ARE NOT THE "CARDS" GEORGE WAS TALKING ABOUT — the row is back exactly as it
+    // was before 22 Sep 2026, and the story is worth keeping so nobody repeats the mistake.
+    // He said "put card 4 above card 2 that is all", and by "card" he meant the numbered STEP
+    // panel — step 4, "It goes away on its own", was to sit above step 2, "Ask it something".
+    // This row was read as the cards he meant, "Full dates" was moved above "Notes", then
+    // "Notes" was deleted as a further reading of *"wait i mean delete this now card"*. Both
+    // edits are reverted here, on his word: *"you didnt do what i wanted"*. The six cards are
+    // unchanged and in their original order: Entries · Notes · Words · Full dates · Placeable · Span.
     card(
       'Full dates',
       `${stats.datedEntries.toLocaleString()}`,
       stats.datedEntries === 1 ? 'entry with a day, month and year' : 'entries with a day, month and year'
     ),
-    // 🔴 THE NOTES CARD IS GONE — George, 22 Sep 2026: *"wait i mean delete this now card, that is
-    // what i want moved up"*, correcting *"put card 4 above card 2"*. So the move was half of it and
-    // this is the other half: the card that was displaced is removed rather than pushed down, and
-    // "Full dates" takes its place in the row. It is also the one card that told the reader nothing
-    // the card beside it had not already told them — on his own book it read 679 notes against 675
-    // entries, because a note is a block unless a block has to be split. The count itself is
-    // untouched: `stats.chunks` still drives the notes map, the caption and the answer, and only the
-    // card that repeated it on screen has gone. Say the word and it comes back in one line.
-    card('Words', stats.words.toLocaleString(), `${stats.characters.toLocaleString()} characters`),
     card(
       'Placeable',
       `${(stats.datedEntries + stats.monthPrecision).toLocaleString()}`,

@@ -365,6 +365,18 @@ input:focus { border-color: var(--accent-2); }
   border-radius: 12px;
   padding: 13px 14px 10px;
 }
+
+/* 🔴 THE STACKED CHART BOXES TOUCHED EACH OTHER. George, 22 Sep 2026, verbatim: *"and there is no
+   visibale vertical space between these"* — listing the three boxes he was looking at, "How it was
+   cut into notes", "How it was indexed" and "The shape of it over time". Only `.charts` carries a
+   gap, and only between its own two children; the boxes that are its SIBLINGS sat edge to edge, so
+   the caption of one drawing was the line directly above the heading of the next and the two
+   rounded borders met. Every stacked box now steps 14px clear of the one above it — deliberately
+   the same distance `.charts` uses inside itself, so the column reads as separate drawings rather
+   than as one long panel. The first box needs no top margin: the cards above it already end in one. */
+#shape > .chart-box + .chart-box,
+#shape > .charts + .chart-box,
+#shape > .chart-box + .charts { margin-top: 14px; }
 /* 🔴 THE CAPTION HAD NO ROOM ABOVE IT. George, 22 Sep 2026, verbatim: *"missing the vertical
    spacing"* — said of the sentence under each chart heading. Measured on dev at seven widths from
    1400px down to 380px: the gap between the heading and its caption was **2px at every one of

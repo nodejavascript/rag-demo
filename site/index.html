@@ -217,9 +217,27 @@ It works best when the document has its own structure: dates on their own line, 
           <div id="health"></div>
         </section>
 
-        <!-- ============ 2 ============ -->
+        <!-- ============ 2 · "It goes away on its own", moved up from 4 ============ -->
+        <!-- 🔴 GEORGE MOVED THIS PANEL ABOVE "Ask it something". His words, 22 Sep 2026: *"after
+             something is indexed the ask it something card opens. i want the ## It goes away on its
+             own card to be on top of the ## Ask it something card"*. What he called "card 4 above
+             card 2" was this SECTION and "Ask it something" — not the six shape cards, which were
+             edited by mistake and are now back as they were. Two things had to change with the move:
+             the badge became 2 (and "Ask it something" 3, "What it read" 4), so the visible
+             sequence is still 1 · 2 · 3 · 4 rather than reading 1 · 4 · 2 · 3; and the panel keeps
+             its own id, `step-4`, because the page's script reveals it by id, not by position. -->
+        <section class="step" id="step-4" hidden>
+          <div class="step-head"><div class="step-n">2</div><h2>It goes away on its own</h2></div>
+          <p class="hint" id="ttl-line"></p>
+          <div class="row">
+            <button type="button" id="delete" class="danger">Delete this document now</button>
+            <span class="statline" id="delete-stat"></span>
+          </div>
+        </section>
+
+        <!-- ============ 3 · was 2 ============ -->
         <section class="step" id="step-2" hidden>
-          <div class="step-head"><div class="step-n">2</div><h2>Ask it something</h2></div>
+          <div class="step-head"><div class="step-n">3</div><h2>Ask it something</h2></div>
 
           <!-- 🔴 WHAT THE DOCUMENT WAS TAKEN FOR IS A LINE UNDER THE STEP'S OWN HEADING, AND IT SAYS
                NOTHING ELSE. George, 22 Sep 2026, correcting the order of the same two nodes for the
@@ -319,7 +337,7 @@ It works best when the document has its own structure: dates on their own line, 
           <!-- "Index it" was the name of this step, and it stopped being true once the button
                moved into step 1: pressing it is something the reader does, and this panel is
                what came back. It now says what it shows. -->
-          <div class="step-head"><div class="step-n">3</div><h2>What it read</h2></div>
+          <div class="step-head"><div class="step-n">4</div><h2>What it read</h2></div>
           <p class="hint">
             What the index made of the document. Every figure below is counted in code across the whole
             of it — never guessed by the model.
@@ -369,16 +387,6 @@ It works best when the document has its own structure: dates on their own line, 
               <canvas id="heat" height="150"></canvas>
             </div>
             <div id="shape-warnings"></div>
-          </div>
-        </section>
-
-        <!-- ============ keep / delete ============ -->
-        <section class="step" id="step-4" hidden>
-          <div class="step-head"><div class="step-n">4</div><h2>It goes away on its own</h2></div>
-          <p class="hint" id="ttl-line"></p>
-          <div class="row">
-            <button type="button" id="delete" class="danger">Delete this document now</button>
-            <span class="statline" id="delete-stat"></span>
           </div>
         </section>
 
