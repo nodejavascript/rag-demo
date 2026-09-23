@@ -387,13 +387,24 @@ test('no chart is capped narrower than the box it sits in', () => {
 test('and no chart shares a row with another', () => {
   // Two charts side by side is what squeezed the value chart to 326px, and a bar chart spends up to
   // 46% of its width on the label column, so what was left could not say anything.
-  // 🔴 EVERY `.charts` RULE IS CHECKED, AND THAT IS THE FIX TO THIS GUARD RATHER THAN A TIDY-UP.
+  // 🔴 EVERY `.charts` rule IS CHECKED, AND THAT IS THE FIX TO THIS GUARD RATHER THAN A TIDY-UP.
   // The first version matched the first `.charts` rule it found — which is the one inside
   // `@media (max-width: 620px)` — and reported a two-column grid as fine, because the mobile rule
   // also says `1fr`. A guard that reads a rule that does not govern is worse than no guard: it went
   // green against the very regression it exists to catch.
+  //
+  // ⚠️ SECOND DEFECT, FOUND 23 SEPTEMBER 2026 BY RUNNING THE SUITE, AND IT WAS A FALSE FAILURE.
+  // The regex `/\.charts \{[^}]*\}/g` matches ANY rule whose selector merely ENDS in `.charts` —
+  // and the stylesheet legitimately carries `#shape > .chart-box + .charts { margin-top: 14px; }`,
+  // a spacing rule that has nothing to do with a grid. The guard reported *"a chart is sharing a
+  // row"* against it and the suite went red on a correct stylesheet. **A rule only says a chart
+  // shares a row if it DECLARES THE GRID** — so the selector is now captured whole (for a readable
+  // failure) and the rules that do not set `grid-template-columns` are not grid rules at all.
+  // Measured before the change: the same failure was present on the committed file, so nothing
+  // here was introduced by the work in progress.
   const css = withoutComments(site('styles.css'));
-  const rules = css.match(/\.charts \{[^}]*\}/g) ?? [];
+  const rules = (css.match(/[^{}]*\.charts \{[^}]*\}/g) ?? [])
+    .filter((rule) => /grid-template-columns/.test(rule));
   assert.ok(rules.length > 0, 'the .charts grid rules are gone');
   for (const rule of rules) {
     assert.match(rule, /grid-template-columns:\s*1fr(;|\s*\})/, `a chart is sharing a row: ${rule}`);
