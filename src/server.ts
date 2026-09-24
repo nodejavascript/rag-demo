@@ -42,6 +42,7 @@ import { AppError, type DocumentView } from './types.js';
 import { SAMPLES } from './samples.js';
 import { describeDocument } from './kinds.js';
 import { axisMonths, buildNoteMap, buildSpans, continuousMonths, type NoteMap, type Spans } from './charts.js';
+import { reportBrowserFault, reportError } from './rollbar.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '4500', 10);
 const HOST = process.env.HOST ?? '127.0.0.1';
@@ -49,6 +50,22 @@ const DB_PATH = process.env.DB_PATH ?? 'data/rag.db';
 const BODY_LIMIT = Number.parseInt(process.env.BODY_LIMIT ?? '900000', 10);
 const FILE_LIMIT = Number.parseInt(process.env.FILE_LIMIT ?? '12000000', 10);
 const MAX_CONCURRENT_INDEX = Number.parseInt(process.env.MAX_CONCURRENT_INDEX ?? '2', 10);
+
+/**
+ * 🔴 THE FAULT REPORT NEEDS A CEILING OF ITS OWN, AND A SMALL BODY.
+ *
+ * Anyone can POST to `/api/fault`, so it is the one endpoint here that a stranger
+ * can call on purpose, in a loop, for nothing. The page caps itself at five reports
+ * per page load, and this is the cap that does not depend on the page behaving: past
+ * it, the request is still answered 204 and nothing is relayed, so the throttle is
+ * invisible to a real visitor and useless to a flood.
+ *
+ * The body limit is small on purpose. A fault is six short fields — a route, a
+ * message, a stack, a script and two integers — and a megabyte arriving here is not a
+ * fault, it is somebody probing the endpoint.
+ */
+const FAULT_PER_HOUR = Number.parseInt(process.env.FAULT_PER_HOUR ?? '60', 10);
+const FAULT_BODY_LIMIT = 16_384;
 
 const SITE_DIR = fileURLToPath(new URL('../site/', import.meta.url));
 
@@ -152,6 +169,30 @@ function limited(key: string, limit: number, windowMs: number): boolean {
   }
   current.count += 1;
   return current.count > limit;
+}
+
+/**
+ * The origin the reader actually used, for the `request.url` field of a page fault.
+ *
+ * 🔴 IT COMES FROM THE FORWARDED PROTOCOL, NOT FROM A GUESS. Caddy terminates the
+ * TLS in front of this app, so the socket sees plain HTTP and would report
+ * `http://rag-demo.nodejavascript.com/…` for a page that is served over https — the
+ * kind of small wrongness that makes a monitoring field untrustworthy. The header is
+ * honoured when it is there, and the fallback is the truth for the deployed site.
+ */
+function originOf(request: IncomingMessage): string {
+  const protoHeader = request.headers['x-forwarded-proto'];
+  const raw = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader;
+  const proto = raw?.split(',')[0]?.trim() || 'https';
+  const host = request.headers.host ?? '';
+  return host === '' ? '' : `${proto}://${host}`;
+}
+
+/** A correlation id, when a proxy in front has set one. Never an identity. */
+function requestIdOf(request: IncomingMessage): string {
+  const header = request.headers['x-request-id'];
+  const raw = Array.isArray(header) ? header[0] : header;
+  return raw?.trim() ?? '';
 }
 
 function clientOf(request: IncomingMessage): string {
@@ -277,6 +318,52 @@ const server = createServer((request, response) => {
     const client = clientOf(request);
 
     try {
+      /**
+       * 🔴 THE FAULT REPORT ROUTE, AND WHY IT ANSWERS 204 TO EVERYTHING.
+       *
+       * The page's reporter posts here — `site/faults.js` — and this route relays it
+       * to Rollbar through `src/rollbar.ts`, which holds the two tokens. The page never
+       * sees a key, which is what lets the reporter live in a public repository.
+       *
+       * It answers **204 and nothing else**: accepted, refused, throttled and garbage
+       * all look the same from outside, because a public endpoint that explains itself
+       * is an endpoint that can be interrogated, and because a fault reporter that
+       * argues with the page is a second fault. The detail goes to the log, where an
+       * operator reads it, and never to the reader.
+       *
+       * The body is read even when it is not wanted: leaving a request body unread on a
+       * keep-alive connection is how the next request on that socket is misread as part
+       * of this one.
+       */
+      if (path === '/api/fault' && request.method === 'POST') {
+        if (!limited(`fault:${client}`, FAULT_PER_HOUR, 3600_000)) {
+          const raw = await readBody(request, FAULT_BODY_LIMIT).catch(() => '');
+          let payload: unknown = null;
+          try {
+            payload = JSON.parse(raw);
+          } catch {
+            // Not JSON, or empty. Marked and refused below rather than logged as a fault.
+            payload = null;
+          }
+          const fault = reportBrowserFault(payload, {
+            origin: originOf(request),
+            requestId: requestIdOf(request),
+          });
+          // A refused report is said out loud here, once per refusal, because "the page
+          // sent nothing useful" and "the page sent nothing at all" are different faults
+          // and the reader sees the same 204 either way.
+          if (!fault && raw !== '') {
+            console.warn(`fault: report refused (route=${path} bytes=${raw.length})`);
+          }
+        } else {
+          // Still drained, still silent: a flood gets the same answer as a real fault.
+          await readBody(request, FAULT_BODY_LIMIT).catch(() => '');
+        }
+        response.writeHead(204, { 'cache-control': 'no-store' });
+        response.end();
+        return;
+      }
+
       if (path === '/healthz') {
         const health = await model.health();
         sendJson(response, health.ok ? 200 : 503, {
@@ -602,6 +689,18 @@ const server = createServer((request, response) => {
       const message =
         error instanceof Error ? error.message : 'Something went wrong on the server.';
       if (status >= 500) console.error(`error ${status} on ${path}: ${message}`);
+      // 🔴 A 500 IS THIS SERVER'S OWN FAULT, SO IT IS REPORTED FROM HERE.
+      // Only a real server error: a 400 is the reader's typo and a 404 is a stale link,
+      // and neither is something to wake anybody for. `reportError` is a no-op when no
+      // token is configured, so a laptop run behaves exactly as it did before Rollbar.
+      if (status >= 500) {
+        reportError(error, {
+          route: path,
+          method: request.method,
+          origin: originOf(request),
+          requestId: requestIdOf(request),
+        });
+      }
       sendJson(response, status, { error: message });
     }
   })();
