@@ -34,6 +34,27 @@ let modelUp = false;
 let modelNote = 'no model is reachable, so no question can be answered';
 let dir = null;
 
+/**
+ * 🔴 WAIT FOR THE BAR BEFORE CLICKING IT — a race, not a defect in the page (standard part 6f).
+ *
+ * The banner is revealed by `consent.js` after the document is parsed. On a loaded machine — and
+ * this suite runs straight after a Docker image build and a push — that reveal can lag past
+ * Playwright's own 30-second auto-wait: measured 24 September 2026, when `#consentAccept` was
+ * reported **"element is not visible"** in two runs out of three while the same test passed in
+ * 1.4 seconds standalone. So the click waits for the BAR, and a bar that never appears fails with
+ * a message naming what stayed hidden rather than a bare click timeout.
+ */
+async function waitForBanner(page) {
+  await page.waitForFunction(
+    () => {
+      const bar = document.getElementById('consentBar');
+      return !!bar && !bar.hidden;
+    },
+    null,
+    { timeout: 90000 }
+  );
+}
+
 async function paste(text) {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await page.fill('#paste', text);
@@ -581,6 +602,7 @@ test('rejecting is remembered, and nothing loads', async (t) => {
   if (!browser) return t.skip('no browser');
   const { context, page, toGoogle } = await openWith();
   try {
+    await waitForBanner(page);
     await page.click('#consentDecline');
     await page.waitForFunction(() => document.getElementById('consentBar').hidden);
     assert.equal(await page.evaluate(() => localStorage.getItem('analytics_consent')), 'denied');
@@ -604,6 +626,7 @@ test('accepting loads the tag, once, and only after the answer', async (t) => {
   const { context, page, toGoogle } = await openWith();
   try {
     assert.deepEqual(toGoogle(), [], 'nothing before the answer');
+    await waitForBanner(page);
     await page.click('#consentAccept');
     await page.waitForFunction(() => document.getElementById('consentBar').hidden);
     // ⚠️ Playwright's signature is `waitForRequest(urlOrPredicate, options)`. Passing a
@@ -697,6 +720,11 @@ test('the footer door reopens the answer without re-asking the question', async 
   const { context, page } = await openWith({ consent: 'granted' });
   try {
     assert.equal(await page.evaluate(() => document.getElementById('consentBar').hidden), true);
+    // 🔴 NOT `waitForBanner` HERE. This visitor has already answered, so the BAR is
+    // deliberately hidden and the test asserts exactly that; the footer door reopens the
+    // PANEL. Waiting for the bar would contradict the assertion on the line above — measured
+    // 24 September 2026, when this guard turned a passing test red in the same edit that
+    // fixed a genuine race in the two tests above.
     await page.click('#consentBtn');
     await page.waitForSelector('#consentPrefs:not([hidden])');
     assert.equal(
