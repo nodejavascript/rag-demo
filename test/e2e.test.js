@@ -25,7 +25,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
  * it guards against was found on THIS document: the page was asked where he went to
  * school and answered **University of Windsor**, a name that appears nowhere in it.
  */
-const RESUME = readFileSync(new URL('../fixtures/george-resume.md', import.meta.url), 'utf8');
+const RESUME = readFileSync(new URL('../fixtures/sample-resume.md', import.meta.url), 'utf8');
 
 let child = null;
 let browser = null;

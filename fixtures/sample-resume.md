@@ -1,4 +1,4 @@
-<redacted>
+ALEX MORGAN
 Senior Software Engineer, Full Stack
 Hamilton, Ontario, Canada
 [email redacted]

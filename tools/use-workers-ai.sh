@@ -29,7 +29,7 @@
 # Where to get the token:
 #   https://dash.cloudflare.com/profile/api-tokens  ->  Create Token  ->  Custom token
 #     Permissions:  Account  ->  Workers AI  ->  Read
-#     Resources:    Include  ->  sample@example.com's Account
+#     Resources:    Include  ->  <contact address>'s Account
 #   Save it to  ~/Documents/secrets/.cloudflare_workers_ai_token   (chmod 600)
 #
 set -euo pipefail
@@ -71,7 +71,7 @@ fail() { printf '\n  STOP: %s\n\n' "$1" >&2; exit 1; }
   Create one (free, no card):
     https://dash.cloudflare.com/profile/api-tokens -> Create Token -> Custom token
     Permissions:  Account -> Workers AI -> Read
-    Resources:    Include -> sample@example.com's Account
+    Resources:    Include -> <contact address>'s Account
   Then save it:
     printf '%s' 'PASTE-IT-HERE' > $TOKEN_FILE && chmod 600 $TOKEN_FILE
 

@@ -119,11 +119,18 @@
     <header class="top" id="top">
       <div class="wrap top-in">
         <div class="brand">
+          <!-- 🔴 THE BAR DRAWS THIS SITE'S OWN MARK, AND IT IS THE FAVICON'S (part 15c).
+               It drew the shared family five circles until 24 September 2026; the same
+               drawing now lives in `favicon.svg`, in the tab and in the bar, so the mark a
+               visitor bookmarks is the mark they land on. The favicon's background plate
+               is deliberately NOT drawn here — the mark sits on the bar, not on a plate —
+               and the colour is the site's own teal, which is what `favicon.svg` uses. -->
           <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="15" fill="none" stroke="#14b8a6" stroke-width="1.6" opacity="0.55" />
-            <circle cx="16" cy="16" r="5.4" fill="#5eead4" />
-            <circle cx="16" cy="16" r="9.4" fill="none" stroke="#5eead4" stroke-width="1.3" opacity="0.5" />
-            <circle cx="25.4" cy="16" r="1.9" fill="#fbbf24" />
+            <g stroke="#5eead4" stroke-width="1.8" fill="none" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M7 3h12l6 6v20H7z" />
+              <path d="M19 3v6h6" />
+              <path d="M11.5 16h9M11.5 21h9M11.5 26h4.5" />
+            </g>
           </svg>
           <div>
             <div class="brand-name">rag-demo</div>
@@ -545,11 +552,14 @@ It works best when the document has its own structure: dates on their own line, 
     <footer>
       <div class="footer-brand">
         <span class="mark" aria-hidden="true">
+          <!-- The same drawing as the header's mark and as `favicon.svg` (part 15c). The
+               paths used to sit one unit in from the favicon's on every edge, which is two
+               drawings rather than one; they are the favicon's own coordinates now. -->
           <svg viewBox="0 0 32 32" width="22" height="22">
-            <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 4h10l6 6v18H8z" />
-              <path d="M18 4v6h6" />
-              <path d="M12.5 16h7M12.5 20h7M12.5 24h3.5" />
+            <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 3h12l6 6v20H7z" />
+              <path d="M19 3v6h6" />
+              <path d="M11.5 16h9M11.5 21h9M11.5 26h4.5" />
             </g>
           </svg>
         </span>

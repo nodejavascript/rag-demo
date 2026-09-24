@@ -36,7 +36,7 @@ import { findPeople, findPlaces } from '../dist/enrich.js';
 import { findDates } from '../dist/dates.js';
 import { isSectionName } from '../dist/text.js';
 
-const RESUME = readFileSync(fileURLToPath(new URL('../fixtures/george-resume.md', import.meta.url)), 'utf8');
+const RESUME = readFileSync(fileURLToPath(new URL('../fixtures/sample-resume.md', import.meta.url)), 'utf8');
 
 /** The entry whose text mentions something, or undefined. */
 function entryMentioning(built, needle) {
@@ -45,7 +45,7 @@ function entryMentioning(built, needle) {
 
 test('the fixture really is the resume, and carries no contact details', () => {
   assert.ok(RESUME.length > 8000, 'the resume is long');
-  assert.match(RESUME, /<redacted>/);
+  assert.match(RESUME, /ALEX MORGAN/);
   assert.match(RESUME, /PROFESSIONAL EXPERIENCE/);
   assert.doesNotMatch(RESUME, /georgefielder@gmail\.com/, 'the email must be redacted');
   assert.doesNotMatch(RESUME, /\(548\) 255-2318/, 'the phone must be redacted');

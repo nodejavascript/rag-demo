@@ -161,7 +161,7 @@ const CASES = [
 
 /** The resume fixture, redacted only of an e-mail address and a phone number. */
 function resumeText() {
-  return readFileSync(new URL('../fixtures/george-resume.md', import.meta.url), 'utf8');
+  return readFileSync(new URL('../fixtures/sample-resume.md', import.meta.url), 'utf8');
 }
 
 async function main() {
