@@ -79,7 +79,11 @@ async function visit(label, { click, seed, ownerOff = false, query = '' } = {}) 
  * The page as it arrives
  * ---------------------------------------------------------------- */
 
-const page = await browser.newPage();
+// 🔴 THE MAIN PAGE NEEDS THE SAME HEADER AS `visit()` — the two checks below read the PAGE and
+// then `/consent.js` itself, and without it both are served the owner-network stub: measured
+// 24 September 2026, when the browser half of this gate passed and only these two failed.
+const mainContext = await browser.newContext({ extraHTTPHeaders: { 'X-Nodejs-Audit': '1' } });
+const page = await mainContext.newPage();
 const response = await page.goto(URL, { waitUntil: 'domcontentloaded' });
 const headers = response.headers();
 const html = await page.content();
