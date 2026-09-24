@@ -120,6 +120,25 @@ async function waitForServer(timeoutMs = 20000) {
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'rag-e2e-'));
+  // 🔴 THIS SUITE MUST OWN ITS PORT. If something is already answering on it, that something is a
+  // server this run did not start — usually a previous run that crashed — and every test below
+  // would then grade the wrong process. Measured 24 September 2026: a stale `dist/server.js`
+  // survived a crash, the next run loaded a page from it, and **25 tests failed at once on a page
+  // that was fine** — which is how a deploy came to be blocked by a leftover process. Failing here
+  // with the reason is cheaper than that.
+  let stale = null;
+  try {
+    stale = await fetch(`${BASE}/healthz`, { signal: AbortSignal.timeout(2000) });
+  } catch {
+    /* nothing listening — that is the good case */
+  }
+  if (stale) {
+    throw new Error(
+      `port ${PORT} is already answering (HTTP ${stale.status}) before the suite started — ` +
+        `a previous run left a server behind; kill it (pkill -f 'dist/server.js') and re-run`
+    );
+  }
+
   child = spawn(
     process.execPath,
     ['--experimental-sqlite', 'dist/server.js'],
@@ -180,7 +199,14 @@ before(async () => {
 
 after(async () => {
   if (browser) await browser.close();
-  if (child) child.kill('SIGTERM');
+  // 🔴 A CRASHED RUN MUST NOT LEAVE A SERVER BEHIND — SIGTERM, then SIGKILL if it is still alive.
+  // The guard above is the other half of this: together they stop one bad run from poisoning the
+  // next.
+  if (child) {
+    child.kill('SIGTERM');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  }
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
