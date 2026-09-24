@@ -27,6 +27,33 @@ if [ -n "$(git status --porcelain)" ]; then
   git status --short | sed 's/^/     /'
 fi
 
+# 🔴 THE FAULT REPORT'S TWO TOKENS, PLACED AS FILES ON THE HOST BEFORE THE IMAGE IS
+# PUBLISHED. A file rather than an environment variable, for the same reason the model
+# key is a file: a value in the environment is visible to anything that can inspect the
+# container or its process list, and it is copied into every child process. The values
+# are never printed here, or in the smoke check, or in the Rollbar report.
+place_secret() {
+  local local_file="$1" remote_name="$2"
+  if [ ! -s "$local_file" ]; then
+    echo "  ⚠ no $remote_name at $local_file — page faults will be dropped, and the app will"
+    echo "    say so exactly once in its log (that is the line that makes a missing token visible)"
+    return 0
+  fi
+  ssh dvs-sites "install -m 600 /dev/stdin /opt/rag/secrets/$remote_name" < "$local_file"
+  echo "  $remote_name placed on the host, mode 600"
+}
+
+# 🔴 AND THE APP IS TOLD WHERE THEY ARE, NOT WHAT THEY ARE. If the compose file on the
+# droplet does not name the two *_FILE variables, the tokens sit on disk and nothing
+# reads them — a silent no-op, which is exactly the failure this whole feature exists to
+# make impossible. So the count is printed and a zero is loud.
+echo "== the fault report's credentials =="
+place_secret "$HOME/Documents/secrets/.rollbar_rag_demo_page_token" rollbar_page_token
+place_secret "$HOME/Documents/secrets/.rollbar_rag_demo_server_token" rollbar_server_token
+named=$(ssh dvs-sites 'grep -c "ROLLBAR_PAGE_TOKEN_FILE\|ROLLBAR_SERVER_TOKEN_FILE" /opt/rag/docker-compose.yml || true')
+printf '  %-24s %s\n' "docker-compose.yml" "$named token file variable(s) named"
+[ "$named" -ge 2 ] || echo "  ⚠ the droplet's compose names fewer than two token files, so a token on disk is not read"
+
 echo "== build =="
 npm run build
 
@@ -70,6 +97,18 @@ done
 # says so, which is the intended behaviour. So report it, do not fail on it.
 printf '  %-24s %s\n' "/healthz" "$(curl -s -o /dev/null -w '%{http_code}' https://rag-demo.nodejavascript.com/healthz)"
 
+# 🔴 THE FAULT ENDPOINT, PROBED AGAINST THE LIVE SITE, WITH A PAYLOAD THAT CREATES NO
+# ITEM. The body carries no message, so the relay refuses it before any request is made
+# — and the endpoint must still answer 204, because accepted, refused, throttled and
+# garbage look the same from outside deliberately. A 200, a 400 or a 500 here means the
+# route is wrong, and a monitoring endpoint that answers the wrong code is worse than
+# none: the page's reporter would look like it was working.
+fault_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H 'content-type: application/json' -d '{"route":"/","message":""}' \
+  https://rag-demo.nodejavascript.com/api/fault)
+printf '  %-24s %s\n' "/api/fault" "$fault_code"
+[ "$fault_code" = "204" ] || { echo "FAILED: /api/fault returned $fault_code, not 204"; exit 1; }
+
 # 🔴 THE BROWSER SUITE RUNS HERE TOO, AND THE LAST TWO CHECKS RUN AGAINST THE LIVE SITE — because on
 # 22 September 2026 a colour helper threw inside the composition renderer and **hid all three charts
 # on step 2 at once, silently.** `npm test` cannot see it (no browser), and this repo's browser suite
@@ -83,6 +122,13 @@ node tools/verify-live-consent.mjs
 
 echo "== the live charts (a real browser, indexing a document on the deployed site) =="
 node tools/verify-live-charts.mjs
+
+# 🔴 TELL ROLLBAR WHICH REVISION WENT OUT, AND THIS IS THE TIME A FIX IS JUDGED
+# AGAINST. George's rule of 23 September 2026 is that an item resolved after a deploy
+# must not come back, and "after" means after this line. It cannot fail the deploy: see
+# tools/report-deploy.mjs.
+node tools/report-deploy.mjs --revision "$(git rev-parse HEAD)" ||
+  echo "  (the Rollbar deploy report was skipped — the site is deployed regardless)"
 
 echo
 echo "deployed."

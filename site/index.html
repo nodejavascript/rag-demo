@@ -43,6 +43,19 @@
 
     <link rel="stylesheet" href="./styles.css" />
 
+    <!-- 🔴 THE FAULT REPORTER, AND IT IS THE ONE THING HERE THAT IS NOT A CHOICE.
+         If this page breaks on a reader's machine the breakage is invisible from
+         here and can never be fixed, so a short note — the error, and the page
+         they were on — goes to this site's own address, which relays it. It is
+         loaded FIRST, before `consent.js` and before `app.js`, so `window.ragFault`
+         exists by the time anything that can fail is running — a fault in the
+         consent script itself would otherwise be exactly the invisible case this
+         exists to catch. It sets no cookie and keeps nothing in the browser, and
+         it never includes a word the reader pasted. What it does and does not
+         send is in `faults.ts`; what the panel must tell the reader is in the
+         Required row below. -->
+    <script src="./faults.js" defer></script>
+
     <!-- 🔴 THE COOKIE GATE, AND THE ONLY THING HERE THAT MAY LOAD GOOGLE'S SCRIPT.
          The Google tag is deliberately NOT in this file. `consent.js` appends it at
          runtime and only after a visitor says yes, so a visit that refuses makes no
@@ -51,17 +64,6 @@
          that declares no id gets no bar and no tag — the gate is shut by default
          rather than open by default. -->
     <script src="./consent.js" data-ga-id="G-F94ETXGE67" defer></script>
-
-    <!-- 🔴 THE FAULT REPORTER, AND IT IS THE ONE THING HERE THAT IS NOT A CHOICE.
-         If this page breaks on a reader's machine the breakage is invisible from
-         here and can never be fixed, so a short note — the error, and the page
-         they were on — goes to this site's own address, which relays it. It is
-         loaded BEFORE `consent.js` so it exists by the time anything that can
-         fail is running, it sets no cookie and keeps nothing in the browser, and
-         it never includes a word the reader pasted. What it does and does not
-         send is in `faults.ts`; what the panel must tell the reader is in the
-         Required row below. -->
-    <script src="./faults.js" defer></script>
 
     <script type="application/ld+json">
       {

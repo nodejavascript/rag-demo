@@ -197,6 +197,9 @@ async function readJson<T>(response: Response): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
+    // expected: a body that is not JSON is replaced by an error that names what did come back, and
+    // that error is thrown — so the fault is reported by whichever catch owns the request rather
+    // than being swallowed here. Converted and re-raised is not swallowed.
     const kind = (response.headers.get('content-type') ?? 'no content type').split(';')[0];
     const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
     throw new Error(
@@ -1174,6 +1177,10 @@ async function loadFile(file: File): Promise<void> {
     loadedFrom = file.name;
     updatePasteStat();
   } catch (error) {
+    // 🔴 REPORTED, BECAUSE A READER'S OWN FILE FAILING TO READ IS A PAGE FAULT, and the message they
+    // are shown never leaves their machine. Nothing of the file travels: the report carries the
+    // error's own words and stack, and the redaction in `faults.ts` strips every URL and query.
+    window.ragFault?.(error, 'reading the file you dropped onto the page');
     el.pasteStat.innerHTML = '';
     showError(el.indexError, error instanceof Error ? error.message : 'That file could not be read.');
   }
@@ -1674,6 +1681,8 @@ async function readJsonLines(
     try {
       event = JSON.parse(trimmed) as typeof event;
     } catch {
+      // expected: a line the page cannot parse is replaced by an error that says whether a web page
+      // came back instead of the API, and that error is thrown — so it is reported upstream.
       throw new Error(
         /^\s*<(!doctype|html)/i.test(trimmed)
           ? `The server answered with a web page instead of the API, so something in front of it answered: ${trimmed.slice(0, 100)}`
@@ -1884,6 +1893,10 @@ async function indexNow(): Promise<void> {
     // scrolling, so it is ready to type in for anyone who does want to move on.
     el.question.focus({ preventScroll: true });
   } catch (error) {
+    // 🔴 REPORTED. Indexing is the whole page, and when it fails the reader gets a sentence and
+    // nobody else hears anything. A document the limits refuse arrives here too, deliberately: the
+    // count of those is how a limit that is too strict gets found.
+    window.ragFault?.(error, 'indexing the document');
     showError(el.indexError, error instanceof Error ? error.message : 'Indexing failed.');
     el.indexStat.textContent = '';
   } finally {
@@ -1945,7 +1958,12 @@ async function deleteNow(): Promise<void> {
         ? 'Deleted. The entries, the notes, the embeddings and the text are all gone.'
         : 'It had already gone — there was nothing left to delete.'
     );
-  } catch {
+  } catch (error) {
+    // 🔴 REPORTED LOUDLY, BECAUSE THIS ONE IS THE PRIVACY PROMISE ITSELF. The page says the
+    // document, its notes and its embeddings are gone; a delete that fails while the reader is told
+    // it worked is the one fault here that could leave somebody's file on the server after they were
+    // promised it was removed.
+    window.ragFault?.(error, 'deleting the document');
     el.deleteStat.textContent = 'The delete did not go through. Try again.';
   } finally {
     el.deleteButton.disabled = false;
@@ -2140,6 +2158,10 @@ async function askNow(): Promise<void> {
     // 🔴 AN ABORT IS NOT A FAILURE. The reader asked something else; the answer they walked away
     // from must not appear as an error under the box they are now typing in.
     if (controller.signal.aborted) return;
+    // 🔴 REPORTED AFTER THE ABORT TEST, NOT BEFORE. An abort is the reader asking something else,
+    // and reporting it would fill the item list with the page working exactly as intended. Anything
+    // that reaches this line is a question that failed for a reason nobody chose.
+    window.ragFault?.(error, 'answering a question');
     showError(el.askError, error instanceof Error ? error.message : 'The question failed.');
   } finally {
     if (ticker !== 0) window.clearInterval(ticker);
@@ -2502,6 +2524,10 @@ async function reportHealth(): Promise<void> {
         : ' Start it with <code>docker compose up -d ollama</code>, or point MODEL_BASE_URL at a hosted provider.') +
       `</div>`;
   } catch {
+    // expected: this is the page asking whether the model is up, and the reader is told that the
+    // answer is unknown. A model that is down is a state of the server rather than a breakage of the
+    // page, and the server reports its own health on `/healthz` — so reporting it here would be the
+    // page telling Rollbar something the server already knows about itself.
     where.innerHTML = '<div class="warn-box">The server did not report whether the model is up.</div>';
   }
 }

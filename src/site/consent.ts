@@ -59,6 +59,8 @@ interface Window {
     try {
       return localStorage.getItem(key);
     } catch (error) {
+      // expected: private mode, or a browser with storage switched off. The page carries on with no
+      // remembered answer, which is the honest outcome — and there is nothing here to fix.
       return null;
     }
   }
@@ -67,8 +69,8 @@ interface Window {
     try {
       localStorage.setItem(key, value);
     } catch (error) {
-      /* Private mode, or a browser with storage switched off. The choice then lasts
-         for the visit, which is the honest outcome. */
+      // expected: private mode, or a browser with storage switched off. The choice then lasts for
+      // the visit, which is the honest outcome, and a browser that refuses storage is not a fault.
     }
   }
 
@@ -76,7 +78,8 @@ interface Window {
     try {
       localStorage.removeItem(key);
     } catch (error) {
-      /* as above */
+      // expected: as above — the key is not there, or storage is off, and either way there is
+      // nothing to undo and nothing to report.
     }
   }
 
