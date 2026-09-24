@@ -52,6 +52,17 @@
          rather than open by default. -->
     <script src="./consent.js" data-ga-id="G-F94ETXGE67" defer></script>
 
+    <!-- 🔴 THE FAULT REPORTER, AND IT IS THE ONE THING HERE THAT IS NOT A CHOICE.
+         If this page breaks on a reader's machine the breakage is invisible from
+         here and can never be fixed, so a short note — the error, and the page
+         they were on — goes to this site's own address, which relays it. It is
+         loaded BEFORE `consent.js` so it exists by the time anything that can
+         fail is running, it sets no cookie and keeps nothing in the browser, and
+         it never includes a word the reader pasted. What it does and does not
+         send is in `faults.ts`; what the panel must tell the reader is in the
+         Required row below. -->
+    <script src="./faults.js" defer></script>
+
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -485,6 +496,15 @@ It works best when the document has its own structure: dates on their own line, 
             <b>Never the text you paste and never the question you type.</b>
           </p>
           <p>
+            <b>One thing here is not a choice, and the panel is told to say so.</b> If the page
+            breaks on your machine, nothing else can tell anybody: so the error and the page you
+            were on are sent to this site's own address, which relays them to <b>Rollbar</b>, our
+            error-monitoring service. It is not a cookie, it keeps nothing in your browser or on
+            your device, and it never carries anything you pasted — no document, no question, no
+            answer. <b>Reject all does not stop it</b>, and that is the whole reason the panel
+            names it as Required instead of offering a switch.
+          </p>
+          <p>
             Your answer is remembered in your own browser's storage, not in a cookie — setting a
             cookie to record a cookie decision would be its own small joke. You can change it
             whenever you like from <b>Cookie settings</b> in the footer.
@@ -507,6 +527,10 @@ It works best when the document has its own structure: dates on their own line, 
           <b>and the text you paste is never sent to Google, whatever you answer here.</b>
           Analytics is the only cookie; it is not loaded until you say yes,
           and <b>saying no makes no request to Google at all</b>.
+
+          The one thing that is not a choice is a <b>fault report</b>: if this page breaks on your
+          machine, that is the only way anybody ever finds out. It is not a cookie, it keeps
+          nothing in your browser, and <b>Reject all does not stop it</b>.
         </p>
         <div class="consentActions">
           <button id="consentAccept" class="ghost" type="button">Accept all</button>
@@ -521,6 +545,26 @@ It works best when the document has its own structure: dates on their own line, 
           <button id="consentClose" class="consentClose" type="button" aria-label="Close cookie preferences">×</button>
         </div>
         <ul class="consentList">
+
+          <!-- 🔴 THE REQUIRED ROW, AND WHY IT IS A TAG RATHER THAN A SWITCH.
+               The fault report cannot be turned off without leaving a breakage on a reader's
+               own machine invisible for ever, so a switch here would be a control that does
+               nothing — the reader makes a decision and the decision is discarded. A tag is
+               honest about that; the reference implementation does the same. -->
+          <li class="consentRow">
+            <div>
+              <p class="consentRowName">Fault report</p>
+              <p class="consentRowWhy">
+                Not a cookie, and not something this page can ask about: if it breaks on your
+                machine the breakage is invisible from here and can never be fixed. So a short
+                note — the error, and the page you were on — is sent to this site's own address,
+                which relays it. It sets no cookie, keeps nothing in your browser, and never
+                includes anything you pasted: no document, no question, no answer. Reject all
+                does not stop it.
+              </p>
+            </div>
+            <span class="consentAlways">Required</span>
+          </li>
           <li class="consentRow">
             <div>
               <p class="consentRowName">Analytics</p>

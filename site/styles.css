@@ -823,6 +823,26 @@ body { padding-bottom: var(--consent-height, 0px); }
   color: var(--muted);
 }
 
+/* The "Required" tag, where a switch would have been.
+   🔴 IT IS A TAG AND NOT A SIWTCH, deliberately: the fault report cannot be
+   turned off without leaving a breakage on a reader's own machine invisible for
+   ever, so offering a control would be offering a choice that is not real. A
+   switch that does nothing when pressed is worse than no switch — the reader
+   makes a decision and the decision is discarded. So it is text the reader can
+   read, drawn as a badge. */
+.consentAlways {
+  flex: none;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 /* The switch. Its ring is drawn from `aria-checked`, so what the eye sees and what a
    screen reader announces are the same attribute and cannot drift apart — nothing in the
    script toggles a class. The word beside it carries the state as well, because a state
