@@ -40,7 +40,18 @@ place_secret() {
     return 0
   fi
   ssh dvs-sites "install -m 600 /dev/stdin /opt/rag/secrets/$remote_name" < "$local_file"
-  echo "  $remote_name placed on the host, mode 600"
+  # 🔴 AND THE OWNER MATTERS — MEASURED ON THE FIRST DEPLOY, 24 SEPTEMBER 2026. The ssh
+  # session to that host runs as ROOT, so `install` leaves the file root:root 600 — and the
+  # container runs as `node`, uid 1000, which then cannot read it. Nothing fails loudly
+  # when that happens: the app starts, reads an empty token, and drops every page fault
+  # with one line in its log. It looks deployed and is not.
+  ssh dvs-sites "chown 1000:1000 /opt/rag/secrets/$remote_name"
+  # And then the file is read AS THE CONTAINER'S OWN USER, because "it is on disk" and
+  # "the process can read it" are different claims and only the second one means anything.
+  # The value is never printed — the byte count is the whole check.
+  readable=$(ssh dvs-sites "docker exec -u node rag sh -c 'wc -c < /run/secrets/$remote_name'" 2>/dev/null || echo 0)
+  echo "  $remote_name placed, mode 600, readable as the container's own user: $readable byte(s)"
+  [ "$readable" -ge 32 ] || echo "  ⚠ the container cannot read $remote_name — page faults will be dropped"
 }
 
 # 🔴 AND THE APP IS TOLD WHERE THEY ARE, NOT WHAT THEY ARE. If the compose file on the
