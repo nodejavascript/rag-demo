@@ -31,7 +31,13 @@ function check(label, ok, detail = '') {
 
 /** A fresh visit, with every request to Google recorded. */
 async function visit(label, { click, seed, ownerOff = false, query = '' } = {}) {
-  const context = await browser.newContext();
+  // 🔴 THE OWNER'S OWN NETWORK IS SERVED A STUB `/consent.js` (the `no-ga-for-me` rule on
+  // `dvs-sites`), and these live checks run from this machine — inside that range. Without this
+  // header the banner never appears, so `#consentAccept` is never clickable and the LIVE gate
+  // fails on a site that is correct. Measured 24 September 2026, twice in one day: first the
+  // compliance check, then this. The header only un-suppresses a file every other visitor already
+  // gets, and it cannot put analytics back on this network.
+  const context = await browser.newContext({ extraHTTPHeaders: { 'X-Nodejs-Audit': '1' } });
   await context.addInitScript(
     ([consent, off]) => {
       try {

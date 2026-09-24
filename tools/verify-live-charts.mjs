@@ -81,7 +81,11 @@ function check(label, ok, detail = '') {
 }
 
 const browser = await chromium.launch({ channel: 'chrome' });
-const page = await browser.newPage();
+// The owner's network is served a stub `/consent.js` (the `no-ga-for-me` rule), and this
+// live check runs from inside that range — so it asks for the real loader the same way the
+// consent gate and the compliance check do.
+const context = await browser.newContext({ extraHTTPHeaders: { 'X-Nodejs-Audit': '1' } });
+const page = await context.newPage();
 
 const pageErrors = [];
 page.on('pageerror', (error) => pageErrors.push(error.message));
