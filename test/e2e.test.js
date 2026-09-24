@@ -31,6 +31,7 @@ let child = null;
 let browser = null;
 let page = null;
 let modelUp = false;
+let modelNote = 'no model is reachable, so no question can be answered';
 let dir = null;
 
 async function paste(text) {
@@ -110,6 +111,39 @@ before(async () => {
 
   const health = await (await fetch(`${BASE}/healthz`)).json();
   modelUp = health.ok === true;
+
+  // 🔴 A MODEL THAT ANSWERS IS NOT A MODEL THAT ANSWERS IN TIME — standard part 6f, outcome 3
+  // (24 September 2026). `health.ok` proves Ollama replied to /api/tags; it says nothing about
+  // SPEED. On this machine the 7B chat model measured **44 s for an 8-token reply**, so the answer
+  // test could never finish inside its 180-second budget and the suite reported **25 failures that
+  // were all one slow machine** — and a test that fails for a reason unrelated to the code teaches
+  // the reader to ignore failures, which is the thing this suite's own header warns about. So the
+  // model's speed is MEASURED here, and the skip below NAMES it.
+  if (modelUp) {
+    const base = (process.env.OLLAMA_URL ?? 'http://localhost:11434').replace(/\/$/, '');
+    const started = Date.now();
+    try {
+      const probe = await fetch(`${base}/api/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: health.chatModel ?? 'qwen2.5:7b',
+          prompt: 'Reply with the single word: ok',
+          stream: false,
+          options: { num_predict: 8 },
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      await probe.json();
+    } catch {
+      /* a thrown probe means it was far slower than the cap — the timing below is the point */
+    }
+    const ms = Date.now() - started;
+    if (ms > 20_000) {
+      modelUp = false;
+      modelNote = `the model is too slow to answer here: ${(ms / 1000).toFixed(1)} s for an 8-token reply`;
+    }
+  }
 
   // Playwright is a devDependency; if it is not installed the test has nothing to drive
   // with, and saying so is better than a stack trace about a missing module.
@@ -257,7 +291,7 @@ test('a document can be pasted and indexed, and the charts draw', async (t) => {
 
 test('a question gets an answer with its details and sources', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
@@ -286,7 +320,7 @@ test('a question gets an answer with its details and sources', async (t) => {
 
 test('a question the document does not answer is refused on the page', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
@@ -449,7 +483,7 @@ test('a well-formed document is not accused of contradicting itself', async (t) 
  */
 test('the school in the resume is the one the resume names', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   assert.match(RESUME, /St\.?\s*Clair/i, 'the fixture must still name the college');
   assert.doesNotMatch(RESUME, /University/i, 'and must still contain no such word');
@@ -1028,7 +1062,7 @@ test('and a diary draws days as marks instead of bars', async (t) => {
  * socket, and the panel is watched in the browser.
  */
 test('the answer arrives as stages as they happen, and the totals agree with them', async (t) => {
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   // Indexed over the API rather than through the page, because this test is about the wire.
   const indexed = await fetch(`${BASE}/api/index`, {
@@ -1110,7 +1144,7 @@ test('the answer arrives as stages as they happen, and the totals agree with the
 
 test('the page shows how the answer is being built, while it is being built', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
@@ -1209,7 +1243,7 @@ test('the page shows how the answer is being built, while it is being built', as
  */
 test('clicking the suggested questions quickly cancels the answers it walked away from', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   // 🔴 THE PROPERTY IS MEASURED AT THE SEAM, NOT FROM PLAYWRIGHT'S EVENT ORDER. Counting how many
   // asks are open at once from the network events races: the abort of one ask and the start of the
@@ -1403,7 +1437,7 @@ test('indexing the same text twice changes nothing on the page', async (t) => {
  */
 test('the label in the answer chart is centred on the bar it belongs to', async (t) => {
   if (!page) return t.skip('no browser');
-  if (!modelUp) return t.skip('no model is reachable, so no question can be answered');
+  if (!modelUp) return t.skip(modelNote);
 
   await paste(await diary());
   await page.evaluate(() => document.getElementById('index').click());
