@@ -970,8 +970,27 @@ test('the page never moves the reader on its own', async () => {
   // used to call `scrollIntoView` on step 3 the moment indexing finished, taking the reader away
   // from the chart that had just started moving. The only scroll left is the one back to the top
   // when a document is deleted, which is the page returning to its own home state.
+  //
+  // 🔴 NARROWED, NOT RELAXED — 9 Oct 2026. George then asked for a scroll, and asked for it by
+  // name: *"when they click index, scroll the page to the inxing chart is displayed"*. That is the
+  // OPPOSITE of the fault above: the reader presses a button and the page brings the thing they
+  // asked for into view, rather than the page taking them somewhere after the work is done. So this
+  // guard no longer forbids the call — it forbids the call happening in the WRONG PLACE, and it
+  // still fails if a second one appears anywhere. Do not weaken it further: the distinction is
+  // *who asked*, and it is the only thing standing between this and the 20 Sep fault returning.
   const bundle = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(bundle, /scrollIntoView/, 'the page scrolls itself somewhere again');
+  const calls = bundle.match(/scrollIntoView/g) ?? [];
+  assert.equal(calls.length, 1, `the page moves the reader ${calls.length} times, not once`);
+  const scrollAt = bundle.indexOf('scrollIntoView');
+  const requestAt = bundle.indexOf('api/index/stream');
+  assert.ok(
+    requestAt > 0,
+    'the index request is not in the bundle, so this guard cannot tell where the scroll sits'
+  );
+  assert.ok(
+    scrollAt < requestAt,
+    'the page scrolls AFTER indexing finished — that is the 20 Sep fault, not the 9 Oct request'
+  );
 });
 
 test('the width of a bar IS the period the entry states', async (t) => {

@@ -206,6 +206,13 @@ It works best when the document has its own structure: dates on their own line, 
             <button type="button" id="clear" class="ghost">Clear</button>
             <input type="file" id="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
             <span class="grow"></span>
+            <!-- 🔴 THE DOCUMENT'S OWN CONTROLS SIT TOGETHER, AND THE DESTRUCTIVE ONE IS PUSHED
+                 RIGHT. George, 9 Oct 2026, verbatim: *"right align the delete button on the row
+                 that has choose file, clear, and only show delete button if there is something to
+                 delete"*. The `.grow` spacer above is what pushes it right. It is `hidden` until a
+                 document has been indexed — before that there is nothing to delete. -->
+            <button type="button" id="delete" class="danger" hidden>Delete this document now</button>
+            <span class="statline" id="delete-stat"></span>
           </div>
 
           <!-- 🔴 THE BUTTON LIVES WITH THE BOX IT ACTS ON — George, 20 Sep 2026: "the index
@@ -250,10 +257,6 @@ It works best when the document has its own structure: dates on their own line, 
         <section class="step" id="step-4" hidden>
           <div class="step-head"><div class="step-n">2</div><h2>It goes away on its own</h2></div>
           <p class="hint" id="ttl-line"></p>
-          <div class="row">
-            <button type="button" id="delete" class="danger">Delete this document now</button>
-            <span class="statline" id="delete-stat"></span>
-          </div>
         </section>
 
         <!-- ============ 3 · was 2 ============ -->

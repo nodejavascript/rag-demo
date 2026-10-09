@@ -1216,6 +1216,10 @@ function resetToHome(): void {
   el.stepAsk.hidden = true;
   el.stepRead.hidden = true;
   el.step4.hidden = true;
+  // 🔴 The delete button now lives on the paste row, so it is put away with the gone-away state
+  // rather than with the panel it used to sit in. George, 9 Oct 2026: *"only show delete button if
+  // there is something to delete"* — with nothing indexed there is nothing to delete.
+  el.deleteButton.hidden = true;
   el.shape.hidden = true;
   el.answerWrap.hidden = true;
   el.sourcesWrap.hidden = true;
@@ -1777,6 +1781,17 @@ async function indexNow(): Promise<void> {
   // earlier run is left alone rather than flashing off and back on.
   el.indexProgress.hidden = false;
 
+  // 🔴 GEORGE, 9 Oct 2026, verbatim: *"when they click index, scroll the page to the inxing chart
+  // is displayed"*. This is the START of a run and the reader is meant to watch it land — which is
+  // a different thing from the jump REMOVED further down this file (*"after it indexes it jumps to
+  // the bottom, remove that"*, 20 Sep 2026). That one took the page away AFTER the work finished,
+  // when the reader is looking at the chart; this one puts the chart on screen when they ask for
+  // it. **Do not remove this line believing it is the same fault** — the two are opposites.
+  //
+  // Instant, not smooth: the stylesheet sets `scroll-behavior: smooth`, and a moving page is the
+  // wrong instrument for a state change the reader is watching land.
+  el.indexProgress.scrollIntoView({ block: 'center', behavior: 'instant' });
+
   try {
     const response = await fetch('./api/index/stream', {
       method: 'POST',
@@ -1884,6 +1899,7 @@ async function indexNow(): Promise<void> {
 
     el.stepAsk.hidden = false;
     el.step4.hidden = false;
+    el.deleteButton.hidden = false;
     renderTtl(body.document);
 
     // 🔴 NO JUMP. This used to scroll the page down to step 3 the moment indexing finished —
@@ -1933,7 +1949,8 @@ function renderTtl(document: DocumentView): void {
   el.ttlLine.innerHTML =
     `It is deleted automatically at <b>${when.toLocaleString()}</b> — about ` +
     `<b>${hours < 1 ? 'under an hour' : plural(Math.round(hours), 'hour')}</b> from now. ` +
-    `You do not have to do anything, and you can end it early with the button.`;
+    `You do not have to do anything, and you can end it early with ` +
+    `<b>Delete this document now</b>.`;
 }
 
 el.deleteButton.addEventListener('click', () => void deleteNow());

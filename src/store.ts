@@ -482,10 +482,50 @@ export class Store {
    *
    * A lone LETTER is still dropped, because that is noise. A lone digit is the point.
    */
+  /**
+   * 🔴 THE FUNCTION WORDS MUST NOT COUNT AS A MATCH — fixed 9 Oct 2026.
+   *
+   * A question is mostly function words, and every one of them appears in almost
+   * every document. OR-ing them into the keyword query therefore means the
+   * keyword half returns rows for ANY question, so `lexicalRows.length === 0`
+   * was effectively never true and the "nothing matched, refused without calling
+   * a model" path in `retrieve.ts` never fired.
+   *
+   * **Measured before the fix:** three wholly out-of-scope questions ("the
+   * capital of France", "cryptocurrency", "the moon landing in 1969") each
+   * returned **8 notes** and were refused by the MODEL — the expensive path the
+   * page promises never to take. On the local model that is ~52 seconds of
+   * avoidable work per question.
+   *
+   * Only the keyword half uses this list. A word dropped here that happened to be
+   * the whole of a question simply leaves the term list shorter, and if nothing
+   * survives the keyword half is empty — which is the honest answer, because none
+   * of the words the reader used picks out a note. The vector half is untouched,
+   * so meaning still finds a passage however it is phrased.
+   */
+  private static readonly NOT_A_MATCH = new Set([
+    'a', 'about', 'after', 'all', 'also', 'am', 'an', 'and', 'any', 'are', 'as', 'at',
+    'be', 'because', 'been', 'before', 'being', 'between', 'both', 'but', 'by',
+    'can', 'could', 'did', 'do', 'does', 'doing', 'done', 'down', 'during',
+    'each', 'few', 'for', 'from', 'further',
+    'had', 'has', 'have', 'having', 'he', 'her', 'here', 'hers', 'him', 'his', 'how',
+    'i', 'if', 'in', 'into', 'is', 'it', 'its',
+    'just', 'me', 'more', 'most', 'much', 'must', 'my',
+    'no', 'nor', 'not', 'now', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'our', 'out', 'over', 'own',
+    'same', 'she', 'should', 'so', 'some', 'such',
+    'than', 'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'this', 'those', 'through', 'to', 'too',
+    'under', 'until', 'up',
+    'very', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'while', 'who', 'whom', 'why', 'will', 'with', 'would',
+    'you', 'your',
+  ]);
+
   termsFor(question: string): string[] {
     return [...question.toLowerCase().matchAll(/[\p{L}\p{N}'\u2019-]+/gu)]
       .map((m) => m[0].replace(/['\u2019-]+$/, ''))
-      .filter((term) => term.length >= 2 || /\d/.test(term));
+      .filter((term) => term.length >= 2 || /\d/.test(term))
+      // A term carrying a digit is never a function word, so it always survives —
+      // "1969" and "6" are the reader's own anchors and must keep matching.
+      .filter((term) => /\d/.test(term) || !Store.NOT_A_MATCH.has(term));
   }
 
   /**

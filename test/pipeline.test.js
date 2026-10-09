@@ -751,7 +751,38 @@ test('a lone letter is still dropped, and a lone digit is still kept', () => {
   const { store, close } = scratch();
   try {
     assert.deepEqual(store.termsFor('a 6 b'), ['6'], 'one digit survives, one letter does not');
-    assert.deepEqual(store.termsFor('x and 27 y'), ['and', '27'], 'words and two-digit days both survive');
+    // 🔴 CHANGED 9 Oct 2026: 'and' IS a function word and is now deliberately dropped — see the
+    // `NOT_A_MATCH` list in `store.ts`. The half of the rule that matters here still holds: the
+    // digit survives, because a digit is a day of the month and never a function word.
+    assert.deepEqual(store.termsFor('x and 27 y'), ['27'], 'a two-digit day survives, a function word does not');
+  } finally {
+    close();
+  }
+});
+
+test('🔴 the function words of a question do not count as a match', () => {
+  // THE FAULT THIS GUARDS, measured 9 Oct 2026. Three wholly out-of-scope questions — "the capital
+  // of France", "cryptocurrency", "the moon landing in 1969" — each returned **8 notes** against a
+  // nine-note diary and were refused by the MODEL, because `what`, `is`, `the` and `of` were OR-ed
+  // into the keyword query and matched almost any document. The page promises that refusal costs
+  // **no model call**, and it did not: on the local model that was ~52 seconds of avoidable work
+  // per question. After the fix the same three questions are refused by the search in 92–429 ms
+  // with `modelMs: 0`.
+  //
+  // A question whose only shared words are function words must therefore reach the search EMPTY —
+  // not merely weakly. If this ever lists `what` or `is` again, the instant refusal is dead again.
+  const { store, close } = scratch();
+  try {
+    assert.deepEqual(
+      store.termsFor('what is the capital of france'),
+      ['capital', 'france'],
+      'a function word was kept, so the keyword half will match any document again'
+    );
+    assert.deepEqual(
+      store.termsFor('is it about them'),
+      [],
+      'a question made only of function words has nothing for the keyword half to match on'
+    );
   } finally {
     close();
   }
@@ -819,7 +850,11 @@ test('a reply the model refuses is reported as a refusal', async () => {
   try {
     const model = stubModel("The document doesn't say.\n\nNothing further.");
     const { document } = await indexDocument(store, model, { text: diary });
-    const result = await answer(store, model, document.id, 'Who is Cecilia?');
+    // 🔴 THE QUESTION HAD TO CHANGE ON 9 Oct 2026. It used to be *"Who is Cecilia?"* — a name the
+    // diary never mentions — but the SEARCH now refuses that in under 100 ms, so the model was
+    // never called and there was no model reply left to inspect. This test is about the MODEL's
+    // own refusal, so it needs a question the document actually covers.
+    const result = await answer(store, model, document.id, 'What was the weather like in March?');
     assert.equal(result.mode, 'refused');
     assert.equal(result.raw, "The document doesn't say.\n\nNothing further.");
   } finally {
