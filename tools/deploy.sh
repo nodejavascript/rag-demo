@@ -108,17 +108,34 @@ done
 # says so, which is the intended behaviour. So report it, do not fail on it.
 printf '  %-24s %s\n' "/healthz" "$(curl -s -o /dev/null -w '%{http_code}' https://rag-demo.nodejavascript.com/healthz)"
 
-# 🔴 THE FAULT ENDPOINT, PROBED AGAINST THE LIVE SITE, WITH A PAYLOAD THAT CREATES NO
-# ITEM. The body carries no message, so the relay refuses it before any request is made
-# — and the endpoint must still answer 204, because accepted, refused, throttled and
-# garbage look the same from outside deliberately. A 200, a 400 or a 500 here means the
-# route is wrong, and a monitoring endpoint that answers the wrong code is worse than
-# none: the page's reporter would look like it was working.
-fault_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+# 🔴 THE FAULT ENDPOINT, PROBED THE WAY THE PAGE PROBES IT — WITH THIS SITE'S OWN ORIGIN.
+#
+# WHAT WAS WRONG HERE, MEASURED 9 October 2026 ON A DEPLOY WHERE NOTHING WAS WRONG: this check
+# asserted `= 204`, and 204 is not what production answers. `/api/fault` is claimed for the whole
+# family at the edge by the `record-fault` Worker — routes `nodejavascript.com/api/fault` and
+# `*.nodejavascript.com/api/fault`, read from the zone's own route list — which is the design in
+# part 18 of the site standard: the page posts here and the Worker relays it with a server token.
+# The app's OWN route in `src/server.ts` still exists and still answers 204, and it is SHADOWED:
+# asked at the origin it answers 204, and asked through the edge it answers 403 to a request that
+# carries no Origin ("Reports are accepted from these sites only.") and 202 to one that carries the
+# page's. So the old test asked the right endpoint a question only the origin could answer — and it
+# would have failed every deploy since the relay went in, on a correct site.
+#
+# THE ASSERTION IS NOW THE ONE THAT MATTERS, AND IT IS THE ONE THE PAGE NEEDS: a report carrying
+# THIS site's origin must be ACCEPTED (2xx). If that fails the reporter is dead, and nothing else in
+# this script notices. The no-origin probe is printed and not graded — that is the relay's
+# allow-list, which is the Worker's to set and not this repo's to pin.
+fault_ok=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H 'content-type: application/json' -H 'Origin: https://rag-demo.nodejavascript.com' \
+  -d '{"route":"/","message":""}' https://rag-demo.nodejavascript.com/api/fault)
+fault_bare=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H 'content-type: application/json' -d '{"route":"/","message":""}' \
   https://rag-demo.nodejavascript.com/api/fault)
-printf '  %-24s %s\n' "/api/fault" "$fault_code"
-[ "$fault_code" = "204" ] || { echo "FAILED: /api/fault returned $fault_code, not 204"; exit 1; }
+printf '  %-24s %s own-origin, %s no-origin\n' "/api/fault" "$fault_ok" "$fault_bare"
+case "$fault_ok" in
+  2??) ;;
+  *) echo "FAILED: /api/fault refused this site's own origin ($fault_ok) — the page's reporter would look like it was working"; exit 1 ;;
+esac
 
 # 🔴 THE BROWSER SUITE RUNS HERE TOO, AND THE LAST TWO CHECKS RUN AGAINST THE LIVE SITE — because on
 # 22 September 2026 a colour helper threw inside the composition renderer and **hid all three charts
