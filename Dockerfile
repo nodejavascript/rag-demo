@@ -41,13 +41,10 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     DB_PATH=/data/rag.db
 
-# `pdftotext` for reading PDFs, and `pdftoppm` + `tesseract` for the ones that are scans:
-# a scanned page carries no text layer, so the page is rasterised and the words are read
-# off it. Both paths are local programs — nothing is sent anywhere, which is what lets the
-# demo claim the document never leaves the machine. `tini` reaps zombies and passes signals
-# properly, so Ctrl-C and `docker stop` shut the server down cleanly rather than killing it.
+# `pdftotext` for reading PDFs. `tini` reaps zombies and passes signals properly, so
+# Ctrl-C and `docker stop` shut the server down cleanly rather than killing it.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng tini ca-certificates \
+ && apt-get install -y --no-install-recommends poppler-utils tini ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json* ./

@@ -20,8 +20,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { answer, type AnswerOptions } from './answer.js';
@@ -51,28 +50,6 @@ const DB_PATH = process.env.DB_PATH ?? 'data/rag.db';
 const BODY_LIMIT = Number.parseInt(process.env.BODY_LIMIT ?? '900000', 10);
 const FILE_LIMIT = Number.parseInt(process.env.FILE_LIMIT ?? '12000000', 10);
 const MAX_CONCURRENT_INDEX = Number.parseInt(process.env.MAX_CONCURRENT_INDEX ?? '2', 10);
-
-/**
- * 🔴 A SCAN HAS NO TEXT LAYER, SO IT IS READ OFF THE PAGES INSTEAD — WHICH IS THE WHOLE
- * POINT OF A DOCUMENT-ARCHIVE DEMO. Measured on this box, 25 October 2026: a three-page
- * image-only PDF came back from `pdftotext` as three form feeds and nothing else, and the
- * page refused it. That refusal is honest but it is also the exact shape of every law
- * firm's twenty years of files — scanned, not born digital.
- *
- * So when `pdftotext` finds no words, the pages are rasterised by `pdftoppm` and read by
- * `tesseract`. Both are local programs: nothing leaves the machine, and there is no
- * per-page bill, which is why this stays a zero-cost path.
- *
- * Measured cost at 300 dpi on this host: **1.05 s to rasterise 3 pages, 0.43 s per page to
- * OCR.** The caps below are what keeps that from becoming a denial of service on a 1 GB
- * host — a page limit, a wall-clock limit, and a temp directory that is always removed.
- */
-const MAX_OCR_PAGES = Number.parseInt(process.env.MAX_OCR_PAGES ?? '25', 10);
-const OCR_DPI = Number.parseInt(process.env.OCR_DPI ?? '300', 10);
-const OCR_TIMEOUT_MS = Number.parseInt(process.env.OCR_TIMEOUT_MS ?? '120000', 10);
-
-/** Fewer than this many letters and digits is not a document — it is a scan, or a blank. */
-const MIN_PDF_TEXT_CHARS = Number.parseInt(process.env.MIN_PDF_TEXT_CHARS ?? '16', 10);
 
 /**
  * 🔴 THE FAULT REPORT NEEDS A CEILING OF ITS OWN, AND A SMALL BODY.
@@ -301,94 +278,6 @@ function pdfToText(buffer: Buffer): Promise<string> {
   });
 }
 
-/**
- * Does this PDF carry words of its own?
- *
- * `pdftotext` separates pages with a form feed, so a scan comes back as a run of `\f`
- * and whitespace. Counting letters and digits rather than characters is what tells the
- * two apart: a page of layout whitespace is not text, however long it is.
- */
-function pdfHasNoText(text: string): boolean {
-  const words = text.replace(/[^\p{L}\p{N}]/gu, '');
-  return words.length < MIN_PDF_TEXT_CHARS;
-}
-
-/** Run one local program to completion, with a wall-clock ceiling. */
-function run(cmd: string, args: string[], input?: Buffer, timeoutMs = 60_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new AppError(`Reading this file took longer than ${Math.round(timeoutMs / 1000)} seconds.`, 504));
-    }, timeoutMs);
-    child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => err.push(chunk));
-    child.on('error', () => {
-      clearTimeout(timer);
-      reject(new AppError(`This server has no ${cmd} installed.`, 501));
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(new AppError(`${cmd} could not read this file: ${Buffer.concat(err).toString().slice(0, 200)}`, 400));
-        return;
-      }
-      resolve(Buffer.concat(out).toString('utf8'));
-    });
-    child.stdin.on('error', () => {
-      /* the close handler reports the real problem */
-    });
-    child.stdin.end(input);
-  });
-}
-
-/**
- * Read a scanned PDF by rasterising its pages and OCR-ing each one.
- *
- * Pages are joined with a form feed, which is what `pdftotext` uses, so everything
- * downstream — the page count and the page offsets — reads the same either way and does
- * not care how the words arrived. The temp directory is removed in a `finally`, so a
- * failed run leaves nothing behind.
- */
-async function ocrPdf(buffer: Buffer): Promise<{ text: string; pages: number; truncated: boolean }> {
-  const dir = await mkdtemp(join(tmpdir(), 'rag-ocr-'));
-  try {
-    await run(
-      'pdftoppm',
-      ['-r', String(OCR_DPI), '-gray', '-png', '-f', '1', '-l', String(MAX_OCR_PAGES), '-', join(dir, 'page')],
-      buffer,
-      OCR_TIMEOUT_MS,
-    );
-    const files = (await readdir(dir)).filter((name) => name.endsWith('.png')).sort();
-    if (files.length === 0) {
-      throw new AppError('That PDF has no readable pages.', 400);
-    }
-    const pages: string[] = [];
-    for (const name of files) {
-      pages.push((await run('tesseract', [join(dir, name), '-', '-l', 'eng'], undefined, OCR_TIMEOUT_MS)).trim());
-    }
-    return {
-      text: pages.join('\n\f\n'),
-      pages: pages.length,
-      // Only meaningful when the file could be taller than the cap, which the caller checks.
-      truncated: files.length >= MAX_OCR_PAGES,
-    };
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-/** Where each page begins, so a quote in the answer can name the page it is on. */
-function pageOffsetsFor(text: string): number[] {
-  const offsets = [0];
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '\f') offsets.push(i + 1);
-  }
-  return offsets;
-}
-
 async function serveStatic(response: ServerResponse, pathname: string): Promise<boolean> {
   // Only ever from the site directory — `..` is stripped rather than resolved.
   const safe = normalize(pathname).replace(/^(\.\.[/\\])+/, '');
@@ -506,32 +395,7 @@ const server = createServer((request, response) => {
           });
           return;
         }
-        const extracted = (await pdfToText(raw)).trim();
-        let text = extracted;
-        let ocr = false;
-        let pages = (extracted.match(/\f/g)?.length ?? 0) + 1;
-
-        // A scan carries no text layer, so the words are read off the page instead.
-        if (pdfHasNoText(extracted)) {
-          const started = Date.now();
-          const read = await ocrPdf(raw);
-          console.log(
-            `ocr pdf bytes=${raw.length} pages=${read.pages} chars=${read.text.length} ms=${Date.now() - started}` +
-              `${read.truncated ? ' TRUNCATED' : ''}`,
-          );
-          if (pdfHasNoText(read.text)) {
-            sendJson(response, 400, {
-              error:
-                'That PDF has no text in it, even after its pages were read as pictures. If it is a scan, the ' +
-                'page may be too faint or photographed at an angle to read — try a sharper copy, or paste the text.',
-            });
-            return;
-          }
-          text = read.text;
-          ocr = true;
-          pages = read.pages;
-        }
-
+        const text = (await pdfToText(raw)).trim();
         if (text.length === 0) {
           sendJson(response, 400, {
             error:
@@ -539,10 +403,8 @@ const server = createServer((request, response) => {
           });
           return;
         }
-        console.log(
-          `extracted pdf bytes=${raw.length} pages≈${pages} chars=${text.length}${ocr ? ' via=ocr' : ' via=pdftotext'}`,
-        );
-        sendJson(response, 200, { text, pages, ocr, pageOffsets: pageOffsetsFor(text) });
+        console.log(`extracted pdf bytes=${raw.length} pages≈${(text.match(/\f/g)?.length ?? 0) + 1} chars=${text.length}`);
+        sendJson(response, 200, { text });
         return;
       }
 

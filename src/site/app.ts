@@ -1108,11 +1108,9 @@ function updatePasteStat(): void {
     (length < MIN_CHARS ? ' · <b>too short to index yet</b>' : ' · ready to index');
 }
 
-// Typing or pasting by hand means the box is no longer holding that file, so the name goes —
-// and so do the page offsets, which describe a document that is no longer in the box.
+// Typing or pasting by hand means the box is no longer holding that file, so the name goes.
 el.paste.addEventListener('input', () => {
   loadedFrom = null;
-  pdfPageOffsets = [];
   updatePasteStat();
 });
 
@@ -1135,8 +1133,8 @@ dropZone.addEventListener('dragleave', (event) => {
 dropZone.addEventListener('drop', (event) => {
   event.preventDefault();
   dropZone.classList.remove('drop');
-  const files = Array.from(event.dataTransfer?.files ?? []);
-  if (files.length > 0) void loadFiles(files);
+  const file = event.dataTransfer?.files?.[0];
+  if (file) void loadFile(file);
   // Dropping text (a selection dragged from another window) fills the box like a paste.
   else {
     const text = event.dataTransfer?.getData('text/plain');
@@ -1149,145 +1147,40 @@ dropZone.addEventListener('drop', (event) => {
 
 $('pick-file').addEventListener('click', () => $<HTMLInputElement>('file').click());
 $<HTMLInputElement>('file').addEventListener('change', (event) => {
-  const files = Array.from((event.target as HTMLInputElement).files ?? []);
-  if (files.length > 0) void loadFiles(files);
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (file) void loadFile(file);
 });
 
 /**
- * Read one file's words, without touching the page.
+ * Read a dropped or chosen file into the box.
  *
- * A PDF is not text, so it goes to the server, which reads it — `pdftotext` for one that
- * carries its own words, and the page rasterised and OCR-ed for a scan. The file itself is
- * never written to disk. Everything else is read in the browser, which is faster and keeps
- * the file on the machine.
- *
- * A PDF also comes back with the character index where each page begins, which is what lets
- * a quote in the answer name the page it is on.
+ * A PDF is not text, so it goes to the server, which runs it through `pdftotext` and
+ * sends the words back — the file itself is never written to disk. Everything else is
+ * read in the browser, which is faster and keeps the file on the machine.
  */
-async function readOne(file: File): Promise<{ text: string; pageOffsets: number[] }> {
+async function loadFile(file: File): Promise<void> {
   const looksPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-  if (!looksPdf) return { text: await file.text(), pageOffsets: [] };
-  const response = await fetch('./api/extract', {
-    method: 'POST',
-    headers: { 'content-type': 'application/pdf' },
-    body: file,
-  });
-  const body = await readJson<{ text?: string; error?: string; pageOffsets?: number[] }>(response);
-  if (!response.ok || !body.text) throw new Error(body.error ?? `The server answered ${response.status}.`);
-  return { text: body.text, pageOffsets: body.pageOffsets ?? [] };
-}
-
-/**
- * 🔴 SEVERAL FILES BECOME ONE CORPUS, NOT ONE DOCUMENT AT A TIME.
- *
- * A firm does not ask about its files one by one — it asks across all of them, which is
- * what makes the archive worth having. So each chosen file is read in turn and joined into
- * a single document, with its own name above it as a heading, which is what lets an answer
- * still say which file it came from.
- *
- * One file behaves exactly as it always did: the box holds that file and the name beside it
- * is that file's name. The ceiling is `MAX_CORPUS_CHARS`, and what did not fit is named
- * rather than silently dropped.
- */
-const MAX_CORPUS_CHARS = 900_000;
-
-/**
- * Where each page of the loaded PDF begins in the corpus, or `[]` when nothing loaded was a
- * PDF. Kept beside the box rather than sent to the server: the page number a reader wants is
- * a fact about the text the browser is holding, and computing it here costs no request.
- *
- * 🔴 IT IS CLEARED WITH THE BOX. A stale offset table would label a quote with a page from a
- * document that is no longer there, which is worse than no page at all.
- */
-let pdfPageOffsets: number[] = [];
-
-/** Which page an index into the corpus falls on, or `null` when the source was not a PDF. */
-function pageAt(index: number): number | null {
-  if (pdfPageOffsets.length === 0 || index < 0) return null;
-  let page = 1;
-  for (const [i, offset] of pdfPageOffsets.entries()) {
-    if (offset <= index) page = i + 1;
-    else break;
-  }
-  return page;
-}
-
-/**
- * The page a note came from.
- *
- * The note is a slice of the corpus, so the honest way to find its page is to look for that
- * slice in the text the browser is holding. Only a note that is found is labelled — a note
- * the corpus no longer contains gets no page rather than a guess.
- */
-function pageOfNote(text: string): number | null {
-  if (pdfPageOffsets.length === 0 || !text) return null;
-  const needle = text.slice(0, 60);
-  const at = el.paste.value.indexOf(needle);
-  return at < 0 ? null : pageAt(at);
-}
-
-async function loadFiles(files: File[]): Promise<void> {
-  const only = files.length === 1 ? files[0] : undefined;
-  if (files.length === 0) return;
-  el.pasteStat.innerHTML = only
-    ? `<b>${esc(only.name)}</b> — reading it…`
-    : `<b>${files.length}</b> files — reading them…`;
-
+  el.pasteStat.innerHTML = `<b>${esc(file.name)}</b> — reading it…`;
   try {
-    if (only) {
-      const read = await readOne(only);
-      el.paste.value = read.text;
-      pdfPageOffsets = read.pageOffsets;
-      loadedFrom = only.name;
-      updatePasteStat();
-      return;
+    if (looksPdf) {
+      const response = await fetch('./api/extract', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf' },
+        body: file,
+      });
+      const body = await readJson<{ text?: string; error?: string }>(response);
+      if (!response.ok || !body.text) throw new Error(body.error ?? `The server answered ${response.status}.`);
+      el.paste.value = body.text;
+    } else {
+      el.paste.value = await file.text();
     }
-
-    const parts: string[] = [];
-    const skipped: string[] = [];
-    const offsets: number[] = [];
-    let total = 0;
-    let numbered = false;
-    for (const file of files) {
-      const read = await readOne(file);
-      const text = read.text.trim();
-      if (!text) {
-        skipped.push(`${file.name} (no words in it)`);
-        continue;
-      }
-      const heading = `# Document: ${file.name}\n\n`;
-      const block = `${heading}${text}`;
-      if (total + block.length > MAX_CORPUS_CHARS) {
-        skipped.push(`${file.name} (over the size limit)`);
-        continue;
-      }
-      // Pages are numbered only while every file so far was a PDF: mixing a PDF's pages with a
-      // text file's absence of them would put a page number on a document that has none.
-      if (read.pageOffsets.length > 0 && skipped.length === 0) {
-        numbered = numbered || parts.length === 0;
-        for (const offset of read.pageOffsets) offsets.push(total + heading.length + offset);
-      } else {
-        numbered = false;
-        offsets.length = 0;
-      }
-      total += block.length;
-      parts.push(block);
-      el.pasteStat.innerHTML = `<b>${parts.length}</b> of <b>${files.length}</b> files read…`;
-    }
-
-    if (parts.length === 0) throw new Error('None of those files held any words to read.');
-    el.paste.value = parts.join('\n\n');
-    pdfPageOffsets = numbered ? offsets : [];
-    loadedFrom = `${parts.length} files`;
+    loadedFrom = file.name;
     updatePasteStat();
-    if (skipped.length > 0) {
-      el.pasteStat.innerHTML += ` · <b>not read:</b> ${esc(skipped.join(', '))}`;
-    }
   } catch (error) {
     // 🔴 REPORTED, BECAUSE A READER'S OWN FILE FAILING TO READ IS A PAGE FAULT, and the message they
     // are shown never leaves their machine. Nothing of the file travels: the report carries the
     // error's own words and stack, and the redaction in `faults.ts` strips every URL and query.
-    window.ragFault?.(error, 'reading the files you dropped onto the page');
+    window.ragFault?.(error, 'reading the file you dropped onto the page');
     el.pasteStat.innerHTML = '';
     showError(el.indexError, error instanceof Error ? error.message : 'That file could not be read.');
   }
@@ -1337,7 +1230,6 @@ function resetToHome(): void {
   el.paste.value = '';
   el.question.value = '';
   loadedFrom = null;
-  pdfPageOffsets = [];
   const file = document.querySelector<HTMLInputElement>('#file');
   if (file) file.value = '';
   el.pasteStat.textContent = 'Nothing pasted yet.';
@@ -2496,19 +2388,15 @@ function renderAnswer(answer: Answer): void {
 
   el.sourcesSummary.textContent = `The ${plural(answer.sources.length, 'note')} this came from`;
   el.sources.innerHTML = answer.sources
-    .map((source) => {
-      // A note from a PDF can name its page; one from a text file, or a note the corpus no longer
-      // holds, says nothing rather than guessing.
-      const page = pageOfNote(source.text);
-      return `<li>
+    .map(
+      (source) => `<li>
         <span class="lbl">[${esc(source.label)}]</span>
-        ${page === null ? '' : `<span class="chip">page ${page}</span>`}
         ${source.both ? '<span class="chip">found both ways</span>' : ''}
         ${source.rerank !== null ? `<span class="chip">rerank ${source.rerank.toFixed(2)}</span>` : ''}
         <div class="txt">${esc(source.text.slice(0, 900))}${source.text.length > 900 ? '\u2026' : ''}</div>
         <div class="meter"><i style="width:${Math.round(Math.max(0, Math.min(1, source.vector)) * 100)}%"></i></div>
-      </li>`;
-    })
+      </li>`
+    )
     .join('');
 }
 
