@@ -5,6 +5,10 @@ The answer quotes the document, and beside it you get the **dates**, **places**,
 **people** and **images** it rests on — so you can check the answer instead of trusting
 it.
 
+**Drop several files at once and they are read as one collection**, each file's name kept
+above its words so an answer can still say which file it came from. **A scanned PDF is read
+off its pages** by OCR, and a quote from a PDF names the page it is on.
+
 Live at **https://rag-demo.nodejavascript.com**
 
 - **Source, public:** https://github.com/nodejavascript/rag-demo — the same project as its
@@ -174,9 +178,30 @@ route the run continues on the fused ranking and says so in `warnings`.
 the index is slow to search and crowds out everything else on a 1 GB host. The refusal
 says what the limit is and suggests splitting the text.
 
-**A PDF is read by `pdftotext`, not by JavaScript.** A scan with no text layer comes
-back empty and is refused **with that explanation** rather than silently indexed as
-nothing.
+**A PDF is read by `pdftotext`, not by JavaScript — and a scan is then read off its pages.**
+A PDF that carries its own words goes through `pdftotext` (16 ms for a one-page file,
+measured 25 Oct 2026). A scan has no text layer, so when `pdftotext` finds fewer than 16
+letters and digits the page is rasterised by `pdftoppm` at 300 dpi and each page is read by
+`tesseract`. Both are local programs: **nothing leaves the machine, and there is no per-page
+bill**, which is what keeps this a zero-cost path. Measured on this host: **1.05 s to
+rasterise 3 pages, 0.43 s per page to OCR**, so a three-page scan answers in **2.27 s**.
+
+The caps that keep that from becoming a denial of service on a 1 GB host are `MAX_OCR_PAGES`
+(25 pages), `OCR_TIMEOUT_MS` (120 s) and `OCR_DPI` (300). Past the page cap the extra pages
+are not read, the log line says `TRUNCATED`, and the reader is not told the document is
+whole. A file that is neither readable text nor a readable scan is still refused **with that
+explanation** rather than silently indexed as nothing.
+
+**Several files become one corpus.** Choose or drop more than one file and each is read in
+turn and joined into a single document, with `# Document: <name>` above its words — so an
+answer can still say which file it came from. One file behaves exactly as it always did. The
+ceiling is 900,000 characters of corpus, and a file that did not fit is **named** beneath the
+box rather than dropped quietly.
+
+**A quote from a PDF names its page.** `/api/extract` returns the character index where each
+page begins, and the page finds the retrieved note in the text it is holding, so the source
+list carries **page 2** beside the note. A note the corpus no longer contains gets no page
+rather than a guess, and a text file has no pages to name.
 
 ---
 

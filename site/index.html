@@ -190,8 +190,10 @@
           <div class="step-head"><div class="step-n">1</div><h2>Give it something to read</h2></div>
           <p class="hint">
             Paste it, or drop a <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.html</code> or
-            <code>.pdf</code> file anywhere on this box. Text copied straight out of a web page is fine:
-            the tags are stripped out, and a PDF is read for you.
+            <code>.pdf</code> file anywhere on this box. Drop several at once and they are read as one
+            collection, with each file's name kept above its words — so an answer can still say which file it
+            came from. Text copied straight out of a web page is fine: the tags are stripped out. A PDF is read
+            for you, and a scanned one has each page turned into an image and the words read off it.
           </p>
 
           <div class="paste-wrap" id="paste-wrap">
@@ -202,9 +204,9 @@ It works best when the document has its own structure: dates on their own line, 
           </div>
 
           <div class="row">
-            <button type="button" id="pick-file">Choose a file</button>
+            <button type="button" id="pick-file">Choose files</button>
             <button type="button" id="clear" class="ghost">Clear</button>
-            <input type="file" id="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
+            <input type="file" id="file" multiple accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.pdf,text/plain,application/pdf" hidden />
             <span class="grow"></span>
             <!-- 🔴 THE DOCUMENT'S OWN CONTROLS SIT TOGETHER, AND THE DESTRUCTIVE ONE IS PUSHED
                  RIGHT. George, 9 Oct 2026, verbatim: *"right align the delete button on the row
