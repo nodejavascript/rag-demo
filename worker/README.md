@@ -50,6 +50,21 @@ With thinking off the same question answered in **58 tokens, 3.1 s, 21.8 neurons
 model does not know the toggle the call is retried without it, so the proxy cannot be worse off
 than a plain call.
 
+## What the droplet actually runs (read off the machine, 2026-11-06)
+
+```
+MODEL_PROVIDER=openai
+MODEL_BASE_URL=https://rag-model-proxy.gmail-webhook.workers.dev/v1
+CHAT_MODEL="@cf/google/gemma-4-26b-a4b-it"
+EMBED_MODEL="@cf/baai/bge-m3"
+MODEL_API_KEY_FILE=/run/secrets/model_key
+```
+
+**The two model values must match this Worker's constants exactly** — the proxy rejects any
+other id with `400`, so the Worker is deployed first and `/opt/rag/.env` changed second, then
+`docker compose up -d --force-recreate`. Changing the chat model does **not** invalidate the
+index: the embedding model did not move, so nothing needs re-indexing.
+
 ## Measured, 2026-09-20
 
 | Check | Result |
