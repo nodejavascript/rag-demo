@@ -51,12 +51,23 @@ SITE="https://rag-demo.nodejavascript.com"
 # would have failed on the first question. The `-fp8` build is the live one. Measured
 # 2026-09-19 with a real call: HTTP 200, content `'Go'`.
 #
+# 🔴 AND THE `-fp8` BUILD IS NOW DEPRECATED TOO — Cloudflare retired it on **2026-11-20**
+# (email to antitomato@gmail.com, 2026-11-06). The replacement here is
+# `@cf/google/gemma-4-26b-a4b-it`: it answers `message.content`, it is on the FREE plan, and
+# measured 2026-11-06 it cost **3.19 neurons** for a one-word answer against **11.68** for
+# `@cf/qwen/qwen3.8-27b`, so it is the one that keeps the demo free the longest.
+#
+# 🔴 AND CLOUDFLARE'S OWN "FRONTIER" SUGGESTIONS ARE NOT AVAILABLE HERE. Both
+# `@cf/deepseek-ai/deepseek-v4.1-flash-1017` and `@cf/zai-org/glm-5.3` answer **HTTP 403
+# "not available on the Workers Free plan"** — measured 2026-11-06. A swap to either would
+# take the demo down on the day it was made.
+#
 # 🔴 AND DO NOT SWAP IN A REASONING MODEL WITHOUT CHECKING THE RESPONSE SHAPE. Both
 # `@cf/openai/gpt-oss-20b` and `@cf/zai-org/glm-4.7-flash` answer HTTP 200 but return
 # **`message.content: null`**, putting their output in `reasoning_content` instead — the
 # demo reads `message.content`, so either one would produce empty answers that look like
 # a broken model. The catalog's "Text Generation" list mixes the two families together.
-CHAT_MODEL="${CHAT_MODEL:-@cf/meta/llama-3.1-8b-instruct-fp8}"
+CHAT_MODEL="${CHAT_MODEL:-@cf/google/gemma-4-26b-a4b-it}"
 EMBED_MODEL="${EMBED_MODEL:-@cf/baai/bge-m3}"
 
 CHECK_ONLY=0

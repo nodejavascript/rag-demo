@@ -12,3 +12,6 @@ secrets/
 *.log
 .env
 .DS_Store
+
+# wrangler dev build state — written by `wrangler dev`, never source
+worker/.wrangler/

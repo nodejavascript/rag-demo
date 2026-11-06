@@ -21,8 +21,15 @@
  *   GET  /v1/models            -> 404, on purpose (see below)
  *
  * The two shapes were measured against the real binding before this was written:
- *   chat   -> { result: { response: 'Ready.', usage: {…} } }
+ *   chat   -> { result: { response: 'Ready.', usage: {…} } }   ← the llama generation only
  *   embed  -> { result: { shape: [2, 1024], data: [[…1024 floats], …] } }
+ *
+ * 🔴 THE CHAT REPLY HAS TWO SHAPES AND BOTH ARE READ. Cloudflare deprecated
+ * `@cf/meta/llama-3.1-8b-instruct-fp8` on 2026-11-20, and the replacements answer the
+ * OpenAI shape instead — measured 2026-11-06 against the live API:
+ *   gemma-4-26b-a4b-it / qwen3.8-27b -> { result: { choices: [{ message: { content } }] } }
+ * so a model swap alone would have returned an empty string and the proxy would have
+ * answered 503 while the model was in fact working.
  *
  * 🔴 THE MODELS ARE AN ALLOW-LIST, NOT A PASS-THROUGH. The caller names a model and this
  * only accepts the two the demo uses. Workers AI's free allowance is measured in neurons
@@ -30,7 +37,12 @@
  * holding the secret choose the expensive one.
  */
 
-const CHAT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8';
+// 🔴 SWAPPED 2026-11-06 — the llama model below is on Cloudflare's deprecation list for
+// 2026-11-20. `@cf/google/gemma-4-26b-a4b-it` is the replacement measured to work on the
+// FREE plan: both of Cloudflare's own "frontier" suggestions (`deepseek-v4.1-flash-1017`,
+// `glm-5.3`) answer 403 "not available on the Workers Free plan", so they are not options
+// here. Was: '@cf/meta/llama-3.1-8b-instruct-fp8'.
+const CHAT_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 const EMBED_MODEL = '@cf/baai/bge-m3';
 
 /** The demo embeds in batches of 64 (`embedBatch` in src/model.ts). */
@@ -114,7 +126,10 @@ export default {
       } catch (error) {
         return failure(503, `Workers AI did not answer: ${error?.message ?? error}`);
       }
-      const content = typeof out === 'string' ? out : (out?.response ?? '');
+      const content =
+        typeof out === 'string'
+          ? out
+          : (out?.response ?? out?.choices?.[0]?.message?.content ?? '');
       if (!content) return failure(503, 'Workers AI returned an empty reply.');
 
       return json(200, {

@@ -145,9 +145,14 @@ for token management, so it cannot mint one either.
 > chat** — the script reads the file and prints nothing.
 
 The endpoint is `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1`, models are
-named `@cf/...`, and the defaults are **`@cf/meta/llama-3.1-8b-instruct`** with
-**`@cf/baai/bge-m3`** — an 8B class model on purpose, because the free allowance is
-measured in neurons and a 70B model spends them several times faster.
+named `@cf/...`, and the defaults are **`@cf/google/gemma-4-26b-a4b-it`** with
+**`@cf/baai/bge-m3`** — a small model on purpose, because the free allowance is measured in
+neurons and a larger model spends them several times faster. 🔴 **This default changed on
+2026-11-06:** `@cf/meta/llama-3.1-8b-instruct-fp8` was the default until Cloudflare
+deprecated it for **2026-11-20**, and both of Cloudflare's own suggested "frontier"
+replacements answer **403 "not available on the Workers Free plan"** on this account.
+`gemma-4-26b-a4b-it` measured 3.19 neurons for a one-word answer against 11.68 for
+`qwen3.8-27b`, so it is the one that keeps the demo free the longest.
 
 🔴 **A TRAP THAT WAS FOUND BEFORE IT SHIPPED.** The readiness probe asks the provider for
 its model catalogue, because that is free and spends no tokens. **Cloudflare refuses

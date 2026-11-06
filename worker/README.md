@@ -33,7 +33,7 @@ be deployed again. `wrangler deployments list` shows the versions and their crea
 
 | Route | Behaviour |
 |---|---|
-| `POST /v1/chat/completions` | `@cf/meta/llama-3.1-8b-instruct-fp8`, OpenAI shape |
+| `POST /v1/chat/completions` | `@cf/google/gemma-4-26b-a4b-it`, OpenAI shape |
 | `POST /v1/embeddings` | `@cf/baai/bge-m3`, up to 64 passages, OpenAI shape |
 | `GET /v1/models` | **404 — deliberately.** The demo reads 404/405 as "no catalogue published, not a fault" |
 | anything else | `401` without the secret, then `404` |
