@@ -42,6 +42,14 @@ be deployed again. `wrangler deployments list` shows the versions and their crea
 measured in neurons and a 70B model spends them several times faster, so a caller holding the
 secret still cannot choose the expensive one.
 
+🔴 **The chat call sends `chat_template_kwargs: { enable_thinking: false }`, and the proxy
+answers nothing without it.** Measured on the demo's own prompt on 2026-11-06: gemma spent all
+700 of the caller's tokens reasoning and returned an **empty** content string, which the demo
+reads as "the provider refused" — a 503 on every question while the model was working fine.
+With thinking off the same question answered in **58 tokens, 3.1 s, 21.8 neurons**. If a future
+model does not know the toggle the call is retried without it, so the proxy cannot be worse off
+than a plain call.
+
 ## Measured, 2026-09-20
 
 | Check | Result |

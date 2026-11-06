@@ -31,6 +31,15 @@
  * so a model swap alone would have returned an empty string and the proxy would have
  * answered 503 while the model was in fact working.
  *
+ * 🔴 AND THE MODEL MUST BE TOLD NOT TO THINK, OR IT ANSWERS NOTHING. Measured 2026-11-06
+ * on the demo's own prompt (2,223 prompt tokens, max_tokens 700):
+ *   gemma, thinking        700 tokens, 6.5 s, 39.3 neurons -> content EMPTY (all budget spent thinking)
+ *   gemma, enable_thinking:false  58 tokens, 3.1 s, 21.8 neurons -> the answer
+ *   qwen,  enable_thinking:false  34 tokens, 1.8 s, 101.4 neurons -> the answer
+ * The demo sends max_tokens 700 and reads an empty string as "the model refused", so
+ * without this the site 503s on every question while the model is answering perfectly —
+ * into a reasoning channel nobody reads.
+ *
  * 🔴 THE MODELS ARE AN ALLOW-LIST, NOT A PASS-THROUGH. The caller names a model and this
  * only accepts the two the demo uses. Workers AI's free allowance is measured in neurons
  * and a 70B model spends them several times faster, so a pass-through would let anyone
@@ -116,7 +125,7 @@ export default {
       const messages = Array.isArray(body.messages) ? body.messages : [];
       if (messages.length === 0) return failure(400, 'There are no messages to answer.');
 
-      const input = { messages };
+      const input = { messages, chat_template_kwargs: { enable_thinking: false } };
       if (Number.isFinite(body.max_tokens)) input.max_tokens = Math.min(body.max_tokens, 4096);
       if (Number.isFinite(body.temperature)) input.temperature = body.temperature;
 
@@ -124,7 +133,15 @@ export default {
       try {
         out = await env.AI.run(CHAT_MODEL, input);
       } catch (error) {
-        return failure(503, `Workers AI did not answer: ${error?.message ?? error}`);
+        // The model may not know the toggle at all; its refusal must not take the answer
+        // with it, so the call is retried without it.
+        const plain = { ...input };
+        delete plain.chat_template_kwargs;
+        try {
+          out = await env.AI.run(CHAT_MODEL, plain);
+        } catch (second) {
+          return failure(503, `Workers AI did not answer: ${second?.message ?? second}`);
+        }
       }
       const content =
         typeof out === 'string'

@@ -226,10 +226,13 @@ tmp, site = pathlib.Path(sys.argv[1]), sys.argv[2]
 sample = json.loads((tmp / "sample.json").read_text())
 
 def post(path, payload):
+    # 🔴 THE USER-AGENT IS NOT DECORATION. Cloudflare answers a bare `Python-urllib/3.x`
+    # with **403 Forbidden** before the request ever reaches the container, so a correct
+    # deployment would fail this verification and read as a broken site. Measured 2026-11-06.
     request = urllib.request.Request(
         site + path,
         data=json.dumps(payload).encode(),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "user-agent": "rag-demo-verify/1.0"},
     )
     return json.load(urllib.request.urlopen(request, timeout=180))
 
